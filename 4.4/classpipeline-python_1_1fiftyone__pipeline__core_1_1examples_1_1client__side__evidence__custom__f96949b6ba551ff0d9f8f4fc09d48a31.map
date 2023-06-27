@@ -1,0 +1,5 @@
+<map id="pipeline&#45;python.fiftyone_pipeline_core.examples.client_side_evidence_custom_flow_element.AstrologyFlowElement" name="pipeline&#45;python.fiftyone_pipeline_core.examples.client_side_evidence_custom_flow_element.AstrologyFlowElement">
+<area shape="rect" id="node1" title=" " alt="" coords="400,5,739,76"/>
+<area shape="rect" id="node2" href="$classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1flowelement_1_1_flow_element.html" title="A FlowElement is placed inside a Pipeline It receives Evidence via a FlowData object It uses this to ..." alt="" coords="116,5,352,76"/>
+<area shape="rect" id="node3" title=" " alt="" coords="5,27,68,54"/>
+</map>
