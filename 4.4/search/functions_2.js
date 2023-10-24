@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['build',['build',['../classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1pipelinebuilder_1_1_pipeline_builder.html#a23ce3da1eb8aadc0be61a9b0bdade87d',1,'pipeline-python::fiftyone_pipeline_core::fiftyone_pipeline_core::pipelinebuilder::PipelineBuilder']]],
-  ['build_5ffrom_5fconfiguration',['build_from_configuration',['../classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1pipelinebuilder_1_1_pipeline_builder.html#a52b26023ad3c4517e8bba8a1949bbd6e',1,'pipeline-python::fiftyone_pipeline_core::fiftyone_pipeline_core::pipelinebuilder::PipelineBuilder']]]
+  ['build',['build',['../classfiftyone__pipeline__core_1_1pipelinebuilder_1_1_pipeline_builder.html#af698723eb3d6eb5ef6e2926cd4e4ca74',1,'fiftyone_pipeline_core::pipelinebuilder::PipelineBuilder']]],
+  ['build_5ffrom_5fconfiguration',['build_from_configuration',['../classfiftyone__pipeline__core_1_1pipelinebuilder_1_1_pipeline_builder.html#ad6e6204e0266b831781e0c7d9e74403e',1,'fiftyone_pipeline_core::pipelinebuilder::PipelineBuilder']]]
 ];

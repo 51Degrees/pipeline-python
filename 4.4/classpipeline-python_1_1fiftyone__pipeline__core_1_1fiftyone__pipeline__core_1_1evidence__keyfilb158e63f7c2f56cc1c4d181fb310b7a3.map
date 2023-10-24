@@ -1,6 +1,0 @@
-<map id="pipeline&#45;python.fiftyone_pipeline_core.fiftyone_pipeline_core.evidence_keyfilter.EvidenceKeyFilter" name="pipeline&#45;python.fiftyone_pipeline_core.fiftyone_pipeline_core.evidence_keyfilter.EvidenceKeyFilter">
-<area shape="rect" id="node1" title="An EvidenceKeyFilter is attached to a FlowElement and is used to check if a specific evidence key is ..." alt="" coords="5,115,207,186"/>
-<area shape="rect" id="node2" href="$classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1basiclist__evide5836cad079e5fd2a9bf12f52f5492338.html" title="An instance of EvidenceKeyFilter that uses a simple array of keys Evidence not using these keys is fi..." alt="" coords="255,5,523,91"/>
-<area shape="rect" id="node3" href="$classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1javascriptbuildea105c8eff0d0c4d82652b37342c1e422.html" title=" " alt="" coords="264,115,513,186"/>
-<area shape="rect" id="node4" href="$classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1sequenceelement_8641fb3e9a64cd8077882e58636fb5f4.html" title=" " alt="" coords="261,210,516,281"/>
-</map>

@@ -1,7 +1,0 @@
-var classpipeline_python_1_1fiftyone__pipeline__cloudrequestengine_1_1tests_1_1test__cloudengine_1_1_cloud_engine_tests =
-[
-    [ "test_cloud_engine", "classpipeline-python_1_1fiftyone__pipeline__cloudrequestengine_1_1tests_1_1test__cloudengine_1_1_cloud_engine_tests.html#a799bb34dbb924720f54f1ad529192960", null ],
-    [ "test_cloud_get_request_with_sequence_evidence", "classpipeline-python_1_1fiftyone__pipeline__cloudrequestengine_1_1tests_1_1test__cloudengine_1_1_cloud_engine_tests.html#ae8ee6c0f7480c379150d5c1959d03d10", null ],
-    [ "test_cloud_post_request_with_sequence_evidence", "classpipeline-python_1_1fiftyone__pipeline__cloudrequestengine_1_1tests_1_1test__cloudengine_1_1_cloud_engine_tests.html#a90cc56a2b1682a5cee43e7f503789692", null ],
-    [ "test_HttpDataSetInException", "classpipeline-python_1_1fiftyone__pipeline__cloudrequestengine_1_1tests_1_1test__cloudengine_1_1_cloud_engine_tests.html#a6290ef9645490714cf224ec9cd62439f", null ]
-];

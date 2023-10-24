@@ -1,5 +1,0 @@
-<map id="pipeline&#45;python.fiftyone_pipeline_engines.fiftyone_pipeline_engines.lru_cache.LRUEngineCache" name="pipeline&#45;python.fiftyone_pipeline_engines.fiftyone_pipeline_engines.lru_cache.LRUEngineCache">
-<area shape="rect" id="node1" title="An instance of DataKeyed cache using a least recently used (LRU) method." alt="" coords="375,13,693,69"/>
-<area shape="rect" id="node2" href="$classpipeline-python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1datakeyed__cache_1_1_data_keyed_cache.html" title="A data keyed cache is the base class for caches used in the pipeline It does nothing on its own and s..." alt="" coords="116,5,327,76"/>
-<area shape="rect" id="node3" title=" " alt="" coords="5,27,68,54"/>
-</map>

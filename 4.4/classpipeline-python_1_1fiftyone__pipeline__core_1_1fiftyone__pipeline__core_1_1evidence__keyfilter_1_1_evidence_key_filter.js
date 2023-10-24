@@ -1,5 +1,0 @@
-var classpipeline_python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1evidence__keyfilter_1_1_evidence_key_filter =
-[
-    [ "filter_evidence", "classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1evidence__keyfilter_1_1_evidence_key_filter.html#ac584049ac3beaead5a65dd84c6299e1f", null ],
-    [ "filter_evidence_key", "classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1evidence__keyfilter_1_1_evidence_key_filter.html#a707a28d2435b81bc3fca1bbdf5b9308b", null ]
-];

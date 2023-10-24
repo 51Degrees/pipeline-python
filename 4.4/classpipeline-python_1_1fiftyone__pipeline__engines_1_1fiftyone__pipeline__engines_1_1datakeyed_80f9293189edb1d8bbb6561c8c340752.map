@@ -1,8 +1,0 @@
-<map id="pipeline&#45;python.fiftyone_pipeline_engines.fiftyone_pipeline_engines.datakeyed_cache.DataKeyedCache" name="pipeline&#45;python.fiftyone_pipeline_engines.fiftyone_pipeline_engines.datakeyed_cache.DataKeyedCache">
-<area shape="rect" id="node1" title="A data keyed cache is the base class for caches used in the pipeline It does nothing on its own and s..." alt="" coords="116,133,327,204"/>
-<area shape="rect" id="node3" href="$classpipeline-python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1basic__dic274685231732835260723d7ce9c28fa6.html" title="A simple cache that stores its results in a dictionary." alt="" coords="409,5,659,76"/>
-<area shape="rect" id="node4" href="$classpipeline-python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1lru__cache_1_1_l_r_u_engine_cache.html" title="An instance of DataKeyed cache using a least recently used (LRU) method." alt="" coords="375,101,693,157"/>
-<area shape="rect" id="node5" href="$classpipeline-python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1tracker_1_1_tracker.html" title="A tracker is an instance of datakeyed cache which, if a result is found in the cache,..." alt="" coords="415,181,653,237"/>
-<area shape="rect" id="node6" href="$classpipeline-python_1_1fiftyone__pipeline__engines_1_1tests_1_1test__engines_1_1_test_cache.html" title=" " alt="" coords="432,261,636,317"/>
-<area shape="rect" id="node2" title=" " alt="" coords="5,155,68,182"/>
-</map>

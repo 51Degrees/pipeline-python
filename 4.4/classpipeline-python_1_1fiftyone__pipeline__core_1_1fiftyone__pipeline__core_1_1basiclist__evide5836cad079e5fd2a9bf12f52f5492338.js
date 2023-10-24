@@ -1,6 +1,0 @@
-var classpipeline_python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1basiclist__evide5836cad079e5fd2a9bf12f52f5492338 =
-[
-    [ "__init__", "classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1basiclist__evide5836cad079e5fd2a9bf12f52f5492338.html#a4d1b953d2bc2bd0feb59ea7445f01300", null ],
-    [ "filter_evidence_key", "classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1basiclist__evide5836cad079e5fd2a9bf12f52f5492338.html#ad2fca76461347c515711c3cdf900c29b", null ],
-    [ "list", "classpipeline-python_1_1fiftyone__pipeline__core_1_1fiftyone__pipeline__core_1_1basiclist__evide5836cad079e5fd2a9bf12f52f5492338.html#ae600797e71ddc0628790d7122a9be52e", null ]
-];

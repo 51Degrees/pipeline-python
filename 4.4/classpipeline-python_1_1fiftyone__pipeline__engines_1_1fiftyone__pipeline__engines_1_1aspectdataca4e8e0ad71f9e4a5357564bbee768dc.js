@@ -1,7 +1,0 @@
-var classpipeline_python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1aspectdataca4e8e0ad71f9e4a5357564bbee768dc =
-[
-    [ "__init__", "classpipeline-python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1aspectdataca4e8e0ad71f9e4a5357564bbee768dc.html#a2ca5872138577cd99715fcf91f30eb27", null ],
-    [ "as_dictionary", "classpipeline-python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1aspectdataca4e8e0ad71f9e4a5357564bbee768dc.html#ae63a337d22c437c3cabd50225457ba59", null ],
-    [ "get_internal", "classpipeline-python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1aspectdataca4e8e0ad71f9e4a5357564bbee768dc.html#a69086bdebeb2d1b060b8c588ca8c865a", null ],
-    [ "contents", "classpipeline-python_1_1fiftyone__pipeline__engines_1_1fiftyone__pipeline__engines_1_1aspectdataca4e8e0ad71f9e4a5357564bbee768dc.html#af5b6fca5f5e92269d118d0e58d33c594", null ]
-];
