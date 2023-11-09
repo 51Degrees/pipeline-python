@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['make_5fcloud_5frequest',['make_cloud_request',['../classfiftyone__pipeline__cloudrequestengine_1_1cloudrequestengine_1_1_cloud_request_engine.html#a214ed43c89efc2855be41d705032cb24',1,'fiftyone_pipeline_cloudrequestengine::cloudrequestengine::CloudRequestEngine']]],
-  ['match',['match',['../classfiftyone__pipeline__engines_1_1tracker_1_1_tracker.html#a250c44b3f7b3d07b1ff85501876c2c99',1,'fiftyone_pipeline_engines.tracker.Tracker.match()'],['../classfiftyone__pipeline__engines__fiftyone_1_1share__usage__tracker_1_1_share_usage_tracker.html#a1a4b8b313dc28cc427ac51fa3dd4e84e',1,'fiftyone_pipeline_engines_fiftyone.share_usage_tracker.ShareUsageTracker.match()']]]
+  ['log',['log',['../classfiftyone__pipeline__core_1_1logger_1_1_logger.html#a355a6b26ab01d504e9737e4c25752837',1,'fiftyone_pipeline_core.logger.Logger.log()'],['../classfiftyone__pipeline__core_1_1pipeline_1_1_pipeline.html#aac89f65689e78bb8784136f9cae84367',1,'fiftyone_pipeline_core.pipeline.Pipeline.log()']]],
+  ['log_5finternal',['log_internal',['../classfiftyone__pipeline__core_1_1logger_1_1_logger.html#aa22d9120efa1e9ca5d2932b75d993b42',1,'fiftyone_pipeline_core.logger.Logger.log_internal()'],['../classtests_1_1classes_1_1memorylogger_1_1_memory_logger.html#ac802dbe84d3838c4b662cbdf113c7957',1,'tests.classes.memorylogger.MemoryLogger.log_internal()']]]
 ];
