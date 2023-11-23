@@ -2,6 +2,7 @@ var searchData=
 [
   ['sequence',['sequence',['../classfiftyone__pipeline__engines__fiftyone_1_1share__usage_1_1_share_usage_data.html#ac51b638623d5d0e481de24916d5ccc4f',1,'fiftyone_pipeline_engines_fiftyone::share_usage::ShareUsageData']]],
   ['server',['server',['../classtests_1_1test__usage_1_1_receiver_thread.html#a3ba36726ca804cb3e38dd9f36e9a3b2d',1,'tests::test_usage::ReceiverThread']]],
+  ['server_5funavailable',['server_unavailable',['../classmockrequestclient_1_1_mock_request_client.html#aebc9a38775dd61b5d61807ca7b159c8c',1,'mockrequestclient::MockRequestClient']]],
   ['session_5fid',['session_id',['../classfiftyone__pipeline__engines__fiftyone_1_1share__usage_1_1_share_usage_data.html#a82398171430bd4c24ae0df64c03f7a6f',1,'fiftyone_pipeline_engines_fiftyone::share_usage::ShareUsageData']]],
   ['setheader_5fproperties',['setheader_properties',['../classfiftyone__pipeline__core_1_1setheaderelement_1_1_set_header_element.html#a5e7ea799ab84eb33491045d3bbc9dd9b',1,'fiftyone_pipeline_core::setheaderelement::SetHeaderElement']]],
   ['setheader_5fproperties_5fdict',['setHeader_properties_dict',['../namespacetests_1_1test__setheader.html#af4db3c349dc1fdecb1f6321aa85cc9de',1,'tests::test_setheader']]],
