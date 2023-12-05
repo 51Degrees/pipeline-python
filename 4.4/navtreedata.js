@@ -26,6 +26,7 @@ var NAVTREE =
     [ "General Docs", "../../documentation/4.4/index.html", null ],
     [ "Cloud Request Engine", "md__home_runner_work_pipeline-python_pipeline-python_common_pipeline-python_fiftyone_pipeline_cloudrequestengine_readme.html", null ],
     [ "Pipeline Core", "md__home_runner_work_pipeline-python_pipeline-python_common_pipeline-python_fiftyone_pipeline_core_readme.html", null ],
+    [ "Purpose", "md__home_runner_work_pipeline-python_pipeline-python_common_pipeline-python_fiftyone_pipeline_coa9aa03c99bb70a5868e3b74932e28d65.html", null ],
     [ "Pipeline Engines", "md__home_runner_work_pipeline-python_pipeline-python_common_pipeline-python_fiftyone_pipeline_engines_readme.html", null ],
     [ "Pipeline Engines Fiftyone", "md__home_runner_work_pipeline-python_pipeline-python_common_pipeline-python_fiftyone_pipeline_engines_fiftyone_readme.html", null ],
     [ "51Degrees Pipeline API", "md__home_runner_work_pipeline-python_pipeline-python_common_pipeline-python_readme.html", null ],
