@@ -98,7 +98,17 @@ $(document).ready(function(){initNavTree('md__home_runner_work_pipeline-python_p
 <div class="g-docs__primary" id="primary">
 <section class="g-docs__section"><p>Store shared (mustache) templates to be used by the implementation of <code>JavaScriptBuilderElement</code> and other components across the languages.</p>
 <h2>Background</h2>
-<p>The <a href="https://github.com/51Degrees/specifications">language-independent specification</a> describes how JavaScriptBuilderElement is used here. The mechanics is: javascript file is requested from the server (on-premise web integration) and is created from this mustache template by the JavaScriptBuilderElement. It then collects more evidence, sends it to the server and upon response calls a callback function providing the client with more precise device data. </p>
+<p>The <a href="https://github.com/51Degrees/specifications">language-independent specification</a> describes how JavaScriptBuilderElement is used here. The mechanics is: javascript file is requested from the server (on-premise web integration) and is created from this mustache template by the JavaScriptBuilderElement. It then collects more evidence, sends it to the server and upon response calls a callback function providing the client with more precise device data.</p>
+<h2>Shipping / Deployment</h2>
+<p>This repo is not a stand-alone package, but is shipped as part of and used by each of the following repositories / packages:</p><ul>
+<li><a href="https://github.com/51Degrees/pipeline-dotnet">pipeline-dotnet</a> as a submodule</li>
+<li><a href="https://github.com/51Degrees/pipeline-java">pipeline-java</a> as a submodule</li>
+<li><a href="https://github.com/51Degrees/pipeline-node">pipeline-node</a> as a submodule</li>
+<li><a href="https://github.com/51Degrees/pipeline-python">pipeline-python</a> as a submodule</li>
+<li><a href="https://github.com/51Degrees/pipeline-php-core">pipeline-php-core</a> as a static dependency</li>
+</ul>
+<p>Wherever it is a submodule it will be updated by <code>Nightly Submodule Update</code> action, wherever it is a static dependency it will be updated by the <code>Nightly Package Update</code> action within a target repository.</p>
+<p>No special action is needed from the user to deploy the template, just be aware that any changes introduced in this repo will automatically propagate and affect the above packages. </p>
 </section></div><!-- PageDoc -->
 </div><!-- primary -->
 </div><!-- inner-->
