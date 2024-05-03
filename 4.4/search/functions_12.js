@@ -55,6 +55,7 @@ var searchData=
   ['testget',['testGet',['../classtests_1_1test__core_1_1_core_tests.html#a9cbc57dbdb4f0e8d599d4a18506d5660',1,'tests::test_core::CoreTests']]],
   ['testgetfromelement',['testGetFromElement',['../classtests_1_1test__core_1_1_core_tests.html#a95bc5de465e0b6bb932c2b869958f3a4',1,'tests::test_core::CoreTests']]],
   ['testgetwhere',['testGetWhere',['../classtests_1_1test__core_1_1_core_tests.html#a8e2884bcb6df029650c951274a05a26c',1,'tests::test_core::CoreTests']]],
+  ['testjavascriptbuilder_5fcookies',['testJavaScriptBuilder_Cookies',['../classtests_1_1test__javascriptbuilder_1_1_java_script_bundler_tests.html#ab128ff884750369c63ef775e45cfb0fa',1,'tests::test_javascriptbuilder::JavaScriptBundlerTests']]],
   ['testjavascriptbuilder_5fminify',['testJavaScriptBuilder_Minify',['../classtests_1_1test__javascriptbuilder_1_1_java_script_bundler_tests.html#a1c5376763d0b0bfc637f7dde97401f6e',1,'tests::test_javascriptbuilder::JavaScriptBundlerTests']]],
   ['testjsonbundler',['testJSONBundler',['../classtests_1_1test__javascriptbuilder_1_1_java_script_bundler_tests.html#a3ba44b7ee2455325a3246d44bf5c91e9',1,'tests::test_javascriptbuilder::JavaScriptBundlerTests']]],
   ['testlogger',['testLogger',['../classtests_1_1test__core_1_1_core_tests.html#aa7cda12d8e7795249a4b49ebfcaa8d77',1,'tests::test_core::CoreTests']]],
