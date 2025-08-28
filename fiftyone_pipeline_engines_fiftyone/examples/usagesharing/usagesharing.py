@@ -39,9 +39,8 @@
 #
 # @include usagesharing/51d.json
 #
-# For details of what each setting does, see the constructor
-# parameters in the reference documentation for the 
-# [share usage element](https://51degrees.com/pipeline-python/classfiftyone__pipeline__engines__fiftyone_1_1share__usage_1_1_share_usage.html) 
+# For details of what each setting does, see the
+# [Share Usage reference](/documentation/4.5/_pipeline_api__features__usage_sharing.html) 
 #
 # This example is available in full on [GitHub](https://github.com/51Degrees/pipeline-python/blob/main/fiftyone_pipeline_engines_fiftyone/examples/usagesharing/usagesharing.py).
 #
