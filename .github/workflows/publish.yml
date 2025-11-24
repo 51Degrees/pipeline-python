@@ -1,21 +1,21 @@
-name: Nightly Submodule Update
+name: Publish
 
 on:
   workflow_dispatch:
     inputs:
       dryrun:
-        default: false
         type: boolean
-        description: Dry Run
-  schedule:
-    - cron: '0 1 * * *'
+        default: false
 
 jobs:
-  Nightly_Submodule_Update:
-    uses: 51Degrees/common-ci/.github/workflows/nightly-submodule-update.yml@main
+  Publish:
+    name: Publish
+    uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@main
     with:
       repo-name: ${{ github.event.repository.name }}
       org-name: ${{ github.event.repository.owner.login }}
       dryrun: ${{ inputs.dryrun || false }}
     secrets:
       token: ${{ secrets.ACCESS_TOKEN }}
+      TestResourceKey: ${{ secrets.SUPER_RESOURCE_KEY }}
+      PypiToken: ${{ secrets.PYPI_TOKEN }}
