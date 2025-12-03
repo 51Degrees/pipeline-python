@@ -1,5 +1,29 @@
 [
   {
+    "Name": "Ubuntu_Python_3.14",
+    "Image": "ubuntu-latest",
+    "Language": "python",
+    "LanguageVersion": "3.14",
+    "RunPerformance": false,
+    "PackageRequirement": true
+  },
+  {
+    "Name": "Windows_Python_3.14",
+    "Image": "windows-latest",
+    "Language": "python",
+    "LanguageVersion": "3.14",
+    "RunPerformance": false,
+    "PackageRequirement": true
+  },
+  {
+    "Name": "macOS_Python_3.14",
+    "Image": "macos-latest",
+    "Language": "python",
+    "LanguageVersion": "3.14",
+    "RunPerformance": false,
+    "PackageRequirement": true
+  },
+  {
     "Name": "Ubuntu_Python_3.13",
     "Image": "ubuntu-latest",
     "Language": "python",
@@ -92,22 +116,6 @@
     "Image": "macos-latest",
     "Language": "python",
     "LanguageVersion": "3.10",
-    "RunPerformance": false,
-    "PackageRequirement": true
-  },
-  {
-    "Name": "Ubuntu_Python_3.9",
-    "Image": "ubuntu-latest",
-    "Language": "python",
-    "LanguageVersion": "3.9",
-    "RunPerformance": false,
-    "PackageRequirement": true
-  },
-  {
-    "Name": "Windows_Python_3.9",
-    "Image": "windows-latest",
-    "Language": "python",
-    "LanguageVersion": "3.9",
     "RunPerformance": false,
     "PackageRequirement": true
   }
