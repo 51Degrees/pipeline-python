@@ -179,7 +179,7 @@ class JavascriptBuilderElement(FlowElement):
 
         query_params = self.get_evidence_key_filter().filter_evidence(flowdata.evidence.get_all())
         variables["_sessionId"] = query_params["query.session-id"] if "query.session-id" in query_params else None
-        variables["_sequence"] = query_params["query.sequence"] if "query.sequence" in query_params else None
+        variables["_sequence"] = query_params["query.sequence"] if "query.sequence" in query_params else 1
 
         variables["_parameters"] = dict([
             (param.split(".")[1], query_params[param])
