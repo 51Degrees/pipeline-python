@@ -28,7 +28,7 @@ class OnPremiseMissingPropertyService(MissingPropertyService):
 
     def check(self, key, flow_element):
 
-        raise Exception("Property " + key + " not found in data for element " + flow_element.datakey + ". This is because your resource key does not include access to this property. Properties that are included for this key under device are " + ', '.join(list(flow_element.get_properties().keys())) + ". For more details on resource keys, see our explainer: https://51degrees.com/documentation/_info__resource_keys.html")
+        raise Exception("Property " + key + " not found in data for element " + flow_element.datakey + ". This is because your resource key does not include access to this property. Properties that are included for this key under device are " + ', '.join(list(flow_element.get_properties().keys())) + ". For more details on resource keys, see our explainer: https://51degrees.com/documentation/_info__resource_keys.html?utm_source=code&utm_medium=comment&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-src-fiftyone_pipeline_cloudrequestengine-clouddata.py&utm_term=property-not-found")
 
 class CloudData(AspectDataDictionary):
 

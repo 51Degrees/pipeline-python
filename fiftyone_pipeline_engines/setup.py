@@ -41,7 +41,7 @@ setuptools.setup(
     version=read("version.txt"),
     author="51Degrees Engineering",
     author_email="engineering@51degrees.com",
-    url="https://51degrees.com/",
+    url="https://51degrees.com/?utm_source=pypi&utm_medium=package&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_engines-setup.py&utm_term=url",
     description=("This package extends the flow element class created by the fiftyone-pipeline-core package into a specialized type of flow element called an engine."),
     long_description=read("readme.md"),
     long_description_content_type='text/markdown',

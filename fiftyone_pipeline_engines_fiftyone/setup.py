@@ -40,7 +40,7 @@ setuptools.setup(
     version=read("version.txt"),
     author="51Degrees Engineering",
     author_email="engineering@51degrees.com",
-    url="https://51degrees.com/",
+    url="https://51degrees.com/?utm_source=pypi&utm_medium=package&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_engines_fiftyone-setup.py&utm_term=url",
     description=("The 51Degrees Pipeline API is a generic web request intelligence and data processing solution with the ability to add a range of 51Degrees and/or custom plug ins (Engines). It includes a ShareUsage engine that sends usage data to 51Degrees in zipped batches."),
     long_description=read("readme.md"),
     long_description_content_type='text/markdown',

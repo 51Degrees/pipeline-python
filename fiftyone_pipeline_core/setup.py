@@ -41,7 +41,7 @@ setuptools.setup(
     version=read("version.txt"),
     author="51Degrees Engineering",
     author_email="engineering@51degrees.com",
-    url="https://51degrees.com/",
+    url="https://51degrees.com/?utm_source=pypi&utm_medium=package&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_core-setup.py&utm_term=url",
     description=("This package defines the essential components of the 51Degrees Pipeline API such as flow elements, flow data and evidence. It also packages together JavaScript served by a pipeline and allows for client side requests for additional data populated by evidence from the client side."),
     long_description=read("readme.md"),
     long_description_content_type='text/markdown',
