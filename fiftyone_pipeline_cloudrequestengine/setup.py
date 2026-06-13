@@ -42,7 +42,7 @@ setuptools.setup(
     version=read("version.txt"),
     author="51Degrees Engineering",
     author_email="engineering@51degrees.com",
-    url="https://51degrees.com/",
+    url="https://51degrees.com/?utm_source=pypi&utm_medium=package&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-setup.py&utm_term=url",
     description=("This package contains a shared engine that is used to make requests to the 51Degrees cloud service on behalf of other data services such as device detection or location."),
     long_description=read("readme.md"),
     long_description_content_type='text/markdown',
