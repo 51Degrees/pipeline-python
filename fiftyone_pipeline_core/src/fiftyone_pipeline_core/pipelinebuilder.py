@@ -48,6 +48,10 @@ class PipelineBuilder(object):
         @rtype: PipelineBuilder
         `use_setheader_properties (Bool)` - Whether to add the SetHeaderElement to the pipeline
         (default true)
+        `suppress_process_exceptions (Bool)` - If False (the default) the first error thrown
+        while processing is re-raised from flow_data.process(); if True, errors are stored on
+        flow_data.errors and process() returns normally. Recommended True for web apps so a
+        processing failure degrades gracefully instead of failing the request.
         @return: Returns a Pipeline Builder
 
         """
@@ -72,6 +76,11 @@ class PipelineBuilder(object):
             self.data_file_update_service = settings["data_file_update_service"]
         else:
             self.data_file_update_service = None
+
+        if "suppress_process_exceptions" in settings:
+            self.suppress_process_exceptions = settings["suppress_process_exceptions"]
+        else:
+            self.suppress_process_exceptions = False
 
     def get_javascript_elements(self):
         """
@@ -138,8 +147,8 @@ class PipelineBuilder(object):
 
         self.flow_elements.extend(self.get_javascript_elements())
         self.flow_elements.extend(self.get_setheader_elements())
-        
-        return Pipeline(self.flow_elements, logger=self.logger, data_file_update_service=self.data_file_update_service)
+
+        return Pipeline(self.flow_elements, logger=self.logger, suppress_process_exceptions=self.suppress_process_exceptions, data_file_update_service=self.data_file_update_service)
 
     def add_logger(self, logger):
         """
@@ -187,7 +196,40 @@ class PipelineBuilder(object):
                 flow_element = flow_element()
             flow_elements.append(flow_element)
 
-        return Pipeline(flow_elements)
+        return Pipeline(flow_elements, suppress_process_exceptions=self._get_suppress_process_exceptions(config))
+
+    def _get_suppress_process_exceptions(self, config):
+        """
+        Resolve the suppress_process_exceptions setting from a configuration.
+        Looks under 'PipelineOptions.BuildParameters' (mirrors the .NET/Java
+        config layout for cross-language consistency), then a direct
+        'PipelineOptions' key, accepting either snake_case or camelCase, and
+        finally falls back to the value supplied to the builder constructor
+        (default False).
+
+        @type config: dict
+        @param config: pipeline configuration
+        @rtype: bool
+        @return: whether processing exceptions should be suppressed
+        """
+
+        options = config.get("PipelineOptions", {})
+
+        def lookup(source):
+            if not isinstance(source, dict):
+                return None
+            for key in ("suppress_process_exceptions", "suppressProcessExceptions"):
+                if key in source:
+                    return source[key]
+            return None
+
+        value = lookup(options.get("BuildParameters"))
+        if value is None:
+            value = lookup(options)
+        if value is None:
+            return self.suppress_process_exceptions
+
+        return value
 
     def _map_properties_names(self, mappings, arguments):
         if arguments is None:
