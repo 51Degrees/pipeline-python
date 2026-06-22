@@ -158,3 +158,64 @@ class CoreTests(unittest.TestCase):
 
         getValue = fd.get("example1").get("integer")
         self.assertTrue(getValue == 5)
+
+    # suppress_process_exceptions: default is False from the builder
+    def test_suppress_process_exceptions_default(self):
+        pipeline = PipelineBuilder().add(ExampleFlowElement1()).build()
+        self.assertFalse(pipeline.suppress_process_exceptions)
+
+    # suppress_process_exceptions: set via builder settings
+    def test_suppress_process_exceptions_builder_setting(self):
+        pipeline = PipelineBuilder({"suppress_process_exceptions": True})\
+            .add(ExampleFlowElement1())\
+            .build()
+        self.assertTrue(pipeline.suppress_process_exceptions)
+
+    # suppress_process_exceptions: read from PipelineOptions.BuildParameters
+    def test_suppress_process_exceptions_from_config_build_parameters(self):
+        config = {
+            "PipelineOptions": {
+                "Elements": [
+                    {
+                        "elementName": "ExampleFlowElement1",
+                        "elementPath": "tests.classes.exampleflowelement1"
+                    }
+                ],
+                "BuildParameters": {
+                    "suppress_process_exceptions": True
+                }
+            }
+        }
+        pipeline = PipelineBuilder().build_from_configuration(config)
+        self.assertTrue(pipeline.suppress_process_exceptions)
+
+    # suppress_process_exceptions: read from a direct key (camelCase accepted)
+    def test_suppress_process_exceptions_from_config_direct(self):
+        config = {
+            "PipelineOptions": {
+                "Elements": [
+                    {
+                        "elementName": "ExampleFlowElement1",
+                        "elementPath": "tests.classes.exampleflowelement1"
+                    }
+                ],
+                "suppressProcessExceptions": True
+            }
+        }
+        pipeline = PipelineBuilder().build_from_configuration(config)
+        self.assertTrue(pipeline.suppress_process_exceptions)
+
+    # suppress_process_exceptions: defaults to False from configuration
+    def test_suppress_process_exceptions_from_config_default(self):
+        config = {
+            "PipelineOptions": {
+                "Elements": [
+                    {
+                        "elementName": "ExampleFlowElement1",
+                        "elementPath": "tests.classes.exampleflowelement1"
+                    }
+                ]
+            }
+        }
+        pipeline = PipelineBuilder().build_from_configuration(config)
+        self.assertFalse(pipeline.suppress_process_exceptions)
