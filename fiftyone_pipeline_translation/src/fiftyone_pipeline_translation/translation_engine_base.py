@@ -129,7 +129,11 @@ class TranslationEngineBase(FlowElement):
         languages = Languages()
         for name, content in sources.items():
             locale = TranslationEngineBase._get_language_name(name)
-            translations = yaml.safe_load(content) or {}
+            # BaseLoader keeps every scalar as a string. Translation maps are
+            # always string->string, and safe_load's YAML 1.1 implicit typing
+            # would corrupt keys such as the country code "NO" (parsed as the
+            # boolean False), breaking the code->name lookup.
+            translations = yaml.load(content, Loader=yaml.BaseLoader) or {}
             languages.add_language(locale, Translator(translations, behavior))
         return languages
 
