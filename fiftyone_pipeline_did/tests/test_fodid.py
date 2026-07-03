@@ -20,6 +20,7 @@
 # such notice(s) shall fulfill the requirements of that article.
 # *********************************************************************
 
+import base64
 import unittest
 from datetime import datetime, timezone
 
@@ -92,10 +93,12 @@ class FodIdTests(unittest.TestCase):
         self.assertEqual(FodId.HASH_OFFSET + FodId.GUID_LENGTH,
                          FodId.RANDOM_PAYLOAD_LENGTH)
 
-    def test_fodid_is_an_owid(self):
+    def test_exposes_owid_level_fields(self):
         fod = FodId.from_base64(
             self.factory.signed_owid_base64(canonical_payload()))
-        self.assertIsInstance(fod.owid, Owid)
+        # OWID-level concerns are delegated to the wrapped envelope.
+        self.assertEqual(TEST_DOMAIN, fod.domain)
+        self.assertIsNotNone(fod.version)
 
     def test_from_base64_unpacks_all_three_fields(self):
         fod = FodId.from_base64(
@@ -293,13 +296,27 @@ class FodIdTests(unittest.TestCase):
         self.assertNotEqual(a.as_base64(), b.as_base64())
 
     def test_construction_does_not_verify(self):
-        # An unsigned OWID (empty signature) still constructs and exposes all
-        # three fields - construction must not verify.
-        unsigned = Owid(domain=TEST_DOMAIN, payload=bytes(canonical_payload()))
-        fod = FodId.from_owid(unsigned)
+        # An OWID with a present but tampered (invalid) signature still
+        # constructs and exposes all three fields - construction must not
+        # verify.
+        raw = bytearray(base64.b64decode(
+            self.factory.signed_owid_base64(canonical_payload())))
+        raw[-1] ^= 0xFF  # corrupt the signature
+        tampered = Owid.from_byte_array(bytes(raw))
+        fod = FodId.from_owid(tampered)
         self.assertEqual(CANONICAL_FLAGS, fod.flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_HASH, fod.hash)
+
+    def test_from_owid_is_decoupled_from_source_owid(self):
+        # Mutating the source OWID after construction must not affect the
+        # FodId (it holds an independent copy).
+        owid = self.factory.signed_owid(canonical_payload())
+        fod = FodId.from_owid(owid)
+        owid.payload = bytes(FodId.PAYLOAD_LENGTH)  # mutate the source
+        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_HASH, fod.hash)
+        self.assertEqual(0x20, fod.payload[FodId.HASH_OFFSET])
 
     def test_verify_with_wrong_key_returns_false(self):
         fod = FodId.from_base64(

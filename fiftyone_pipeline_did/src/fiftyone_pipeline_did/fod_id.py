@@ -142,9 +142,17 @@ class FodId:
 
     @classmethod
     def from_owid(cls, owid: Owid) -> "FodId":
-        """Promotes an already-parsed OWID into a 51Did (alias of the
-        constructor)."""
-        return cls(owid)
+        """Promotes an already-parsed OWID into a 51Did.
+
+        The OWID is **copied** (round-tripped through its byte form), not
+        aliased, so a ``FodId`` can never desync from its envelope if the
+        caller later mutates the OWID it passed in. The supplied OWID must
+        therefore be signed (serializable). Raises :class:`TypeError` if
+        ``owid`` is ``None``.
+        """
+        if owid is None:
+            raise TypeError("owid must not be None")
+        return cls(Owid.from_byte_array(owid.as_byte_array()))
 
     @property
     def flags(self) -> int:
@@ -169,11 +177,6 @@ class FodId:
         cache / dedup key.
         """
         return self._hash
-
-    @property
-    def owid(self) -> Owid:
-        """The wrapped OWID envelope."""
-        return self._owid
 
     @property
     def version(self) -> Version:
