@@ -48,9 +48,14 @@ setuptools.setup(
     python_requires=">=3.9",
     packages=["fiftyone_pipeline_did"],
     package_dir={"": "src"},
-    install_requires=[
-        'owid'
-    ],
+    # OWID is provided by the 51Degrees owid-python fork, which is consumed via
+    # the git submodule / editable install (see tox.ini) rather than declared as
+    # a PyPI dependency. The name "owid" on PyPI belongs to an unrelated project,
+    # and the 51Degrees fork is not published to PyPI, so a bare
+    # install_requires=['owid'] would resolve to the wrong package. If this
+    # package is ever published standalone, depend on a 51Degrees-namespaced
+    # OWID distribution here instead.
+    install_requires=[],
     license="EUPL-1.2",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
