@@ -75,14 +75,20 @@ class FodId:
         """Promotes an already-parsed :class:`owid.Owid` into a 51Did by
         unpacking its payload.
 
-        Raises :class:`TypeError` if ``owid`` is ``None`` and
-        :class:`ValueError` if the payload is shorter than the minimum for its
-        identifier type.
+        The OWID is **copied** (round-tripped through its byte form), not
+        aliased, so a ``FodId`` can never desync from its envelope if the caller
+        later mutates the OWID they passed in. The OWID must therefore be signed
+        (serializable).
+
+        Raises :class:`TypeError` if ``owid`` is ``None``, :class:`ValueError`
+        if the payload is shorter than the minimum for its identifier type, and
+        :class:`owid.OwidError` if the OWID cannot be serialized (e.g. it is
+        unsigned).
         """
         if owid is None:
             raise TypeError("owid must not be None")
-        self._owid = owid
-        payload = owid.payload
+        self._owid = Owid.from_byte_array(owid.as_byte_array())
+        payload = self._owid.payload
         if payload is None or len(payload) < self.HEADER_LENGTH:
             raise ValueError(
                 "51Did payload must be at least {0} bytes; got {1}.".format(
@@ -144,15 +150,15 @@ class FodId:
     def from_owid(cls, owid: Owid) -> "FodId":
         """Promotes an already-parsed OWID into a 51Did.
 
-        The OWID is **copied** (round-tripped through its byte form), not
-        aliased, so a ``FodId`` can never desync from its envelope if the
-        caller later mutates the OWID it passed in. The supplied OWID must
-        therefore be signed (serializable). Raises :class:`TypeError` if
-        ``owid`` is ``None``.
+        The constructor **copies** the OWID (round-tripped through its byte
+        form), not aliases it, so a ``FodId`` can never desync from its
+        envelope if the caller later mutates the OWID it passed in. The
+        supplied OWID must therefore be signed (serializable). Raises
+        :class:`TypeError` if ``owid`` is ``None``.
         """
         if owid is None:
             raise TypeError("owid must not be None")
-        return cls(Owid.from_byte_array(owid.as_byte_array()))
+        return cls(owid)
 
     @property
     def flags(self) -> int:

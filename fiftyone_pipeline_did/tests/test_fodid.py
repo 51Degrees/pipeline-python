@@ -318,6 +318,16 @@ class FodIdTests(unittest.TestCase):
         self.assertEqual(CANONICAL_HASH, fod.hash)
         self.assertEqual(0x20, fod.payload[FodId.HASH_OFFSET])
 
+    def test_constructor_is_decoupled_from_source_owid(self):
+        # The constructor must copy the OWID too, not just from_owid -
+        # mutating the source afterwards must not affect the FodId.
+        owid = self.factory.signed_owid(canonical_payload())
+        fod = FodId(owid)
+        owid.payload = bytes(FodId.PAYLOAD_LENGTH)  # mutate the source
+        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_HASH, fod.hash)
+        self.assertEqual(0x20, fod.payload[FodId.HASH_OFFSET])
+
     def test_verify_with_wrong_key_returns_false(self):
         fod = FodId.from_base64(
             self.factory.signed_owid_base64(canonical_payload()))
