@@ -67,13 +67,6 @@ DEFAULT_ENDPOINT = "https://cloud.51degrees.com/api/v4/"
 #: base, honoured here when no endpoint argument is given.
 ENDPOINT_VARIABLE = "FOD_CLOUD_API_URL"
 
-# How far either side of a key boundary a neighbouring key is also tried,
-# matching the tolerance the cloud applies. A creation time is recorded to
-# the minute and stamped a moment after the key was chosen, so an
-# identifier dated a short time past a boundary may carry the previous
-# key's signature, and one dated a short time before it may carry the
-# next. The tolerance is an implementation detail of this client rather
-# than part of its public surface.
 _BOUNDARY_TOLERANCE = timedelta(minutes=15)
 
 #: A cached key list older than this is fetched again before use.
@@ -458,10 +451,9 @@ class DidClient:
         envelope version must be the one the cloud signs, the payload must
         be at least the base length for its type (a longer payload carries
         a creator context and is accepted), and the signature must verify
-        against the key in force at the identifier's date or, within a
-        short tolerance either side of a period boundary, the
-        neighbouring key. No earlier key is ever tried, so a key leaked
-        from one period cannot sign an identifier dated in another."""
+        against the key in force at the identifier's date or, near a
+        period boundary, the neighbouring key. No earlier key is ever
+        tried."""
         return self.verify_signature_detailed(fod_id).valid
 
     def verify_signature_detailed(self, fod_id: Union[FodId, str]) \
@@ -770,8 +762,8 @@ def _candidates_for_date(keys: List[PublicKeyEntry],
                          at: datetime) -> List[PublicKeyEntry]:
     """The entries that may have signed something created at the moment,
     best first: the entry in force, then the entry in force a tolerance
-    earlier and the entry in force a tolerance later where those differ.
-    Deliberately not every earlier entry."""
+    earlier and the entry in force a tolerance later where those
+    differ."""
     candidates: List[PublicKeyEntry] = []
 
     def add(entry: Optional[PublicKeyEntry]) -> None:

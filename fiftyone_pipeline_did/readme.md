@@ -123,13 +123,11 @@ signing public keys from the cloud once, caches them for a day, and picks
 the key in force when the identifier was created, being the entry whose
 start is latest on or before the identifier's date (a key stays in force
 until the next one starts, and keys are published up to three months
-ahead). Within a short tolerance either side of a boundary the
-neighbouring key is tried as well. No earlier key is ever tried, so a
-key leaked from one period cannot sign an identifier dated in another.
-The envelope version must be the one the cloud signs and the payload at
-least the base length for its type, and a longer payload carries a
-creator context and is accepted, its exact lengths being for the cloud
-to judge.
+ahead). Near a period boundary the neighbouring key is tried as well. No
+earlier key is ever tried. The envelope version must be the one the
+cloud signs and the payload at least the base length for its type, and a
+longer payload carries a creator context and is accepted, its exact
+lengths being for the cloud to judge.
 
 ```python
 valid = client.verify_signature(fod_id)            # bool
