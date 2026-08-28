@@ -61,9 +61,10 @@ def random_payload():
 
 
 def context_payload():
-    """A Probabilistic payload followed by a 19 byte creator context
-    section, the length a version 0 section has on the cloud."""
-    return probabilistic_payload() + bytes([0]) + bytes(range(1, 19))
+    """A Probabilistic payload followed by a creator context
+    section. How long a section is belongs to the cloud and changes with
+    the section version, so an arbitrary length is used here."""
+    return probabilistic_payload() + bytes([0]) + bytes(range(1, 24))
 
 
 def signed_envelope(crypto, payload, date=None, version=Version.VERSION3,

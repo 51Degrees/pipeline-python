@@ -92,7 +92,6 @@ class FodIdTests(unittest.TestCase):
                          FodId.HASH_OFFSET)
         self.assertEqual(FodId.HASH_OFFSET + FodId.GUID_LENGTH,
                          FodId.RANDOM_PAYLOAD_LENGTH)
-        self.assertEqual(136, FodId.MAXIMUM_BYTE_LENGTH)
 
     def test_exposes_owid_level_fields(self):
         fod = FodId.from_base64(
@@ -198,53 +197,29 @@ class FodIdTests(unittest.TestCase):
         with self.assertRaises(OwidError):
             FodId.from_base64("This is not valid Base64!@#$")
 
-    def test_maximum_length_uses_first_37_payload_bytes(self):
-        payload = bytearray(56)
+    def test_payload_larger_than_spec_uses_first_37_bytes(self):
+        payload = bytearray(64)
         payload[0:FodId.PAYLOAD_LENGTH] = canonical_payload()
         for i in range(FodId.PAYLOAD_LENGTH, len(payload)):
             payload[i] = 0xCC
-        owid = Owid(
-            domain="51d.es", payload=bytes(payload), signature=bytes(64))
-        wire = owid.as_byte_array()
-        self.assertEqual(FodId.MAXIMUM_BYTE_LENGTH, len(wire))
-        fod = FodId.from_byte_array(wire)
+        fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(CANONICAL_FLAGS, fod.flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_HASH, fod.hash)
         self.assertEqual(FodId.HASH_LENGTH, len(fod.hash))
 
-    def test_one_byte_beyond_maximum_raises_for_every_input(self):
-        payload = bytearray(57)
-        payload[0:FodId.PAYLOAD_LENGTH] = canonical_payload()
-        owid = Owid(
-            domain="51d.es", payload=bytes(payload), signature=bytes(64))
-        wire = owid.as_byte_array()
-        encoded = owid.as_base64()
-        self.assertEqual(FodId.MAXIMUM_BYTE_LENGTH + 1, len(wire))
-
-        with self.assertRaises(ValueError):
-            FodId.from_base64(encoded)
-        with self.assertRaises(ValueError):
-            FodId.from_byte_array(wire)
-        with self.assertRaises(ValueError):
-            FodId.from_owid(owid)
-
-    def test_oversized_payload_in_short_envelope_explains_payload(self):
-        payload = bytearray(57)
-        payload[0:FodId.PAYLOAD_LENGTH] = canonical_payload()
-        owid = Owid(domain="x", payload=bytes(payload), signature=bytes(64))
-        wire = owid.as_byte_array()
-        encoded = owid.as_base64()
-        self.assertLessEqual(len(wire), FodId.MAXIMUM_BYTE_LENGTH)
-
-        for construct in (
-            lambda: FodId.from_base64(encoded),
-            lambda: FodId.from_byte_array(wire),
-            lambda: FodId.from_owid(owid),
-        ):
-            with self.assertRaisesRegex(
-                    ValueError, r"payload must not exceed 56 bytes"):
-                construct()
+    def test_long_envelope_parses_and_keeps_the_header_fields(self):
+        # No upper bound belongs in the reader: a creator domain is a
+        # deployment parameter and a context section of a version this
+        # package does not know about may be any length.
+        payload = bytearray(canonical_payload()) + bytearray(200)
+        owid = Owid(domain="identifiers." + ("a" * 120) + ".example",
+                    payload=bytes(payload), signature=bytes(64))
+        fod = FodId.from_base64(owid.as_base64())
+        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
+        self.assertEqual(CANONICAL_HASH, fod.hash)
+        self.assertEqual(FodId.HASH_LENGTH, len(fod.hash))
 
     def test_is_cryptographically_verifiable(self):
         fod = FodId.from_base64(

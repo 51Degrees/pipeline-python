@@ -91,6 +91,16 @@ class FodIdBase64Tests(unittest.TestCase):
             self.assertEqual(self.fod_id.as_byte_array(),
                              parsed.as_byte_array(), form)
 
+    def test_surrounding_whitespace_parses_to_the_same_value(self):
+        # A value copied from a header, a form field or a text file
+        # can arrive with a newline or a space around it.
+        for form in (self.standard + "\n", " " + self.standard,
+                     self.standard + " ",
+                     " " + self.fod_id.as_base64_url() + "\n"):
+            parsed = FodId.from_base64(form)
+            self.assertEqual(self.fod_id.as_byte_array(),
+                             parsed.as_byte_array(), repr(form))
+
     def test_as_base64_url_round_trips(self):
         again = FodId.from_base64(self.fod_id.as_base64_url())
         self.assertEqual(self.fod_id.as_base64_url(), again.as_base64_url())
@@ -295,7 +305,7 @@ class KeySelectionTests(unittest.TestCase):
                              self.signed_by(2, self.schedule.start(2)))
                          .starts_at)
 
-    def test_earlier_neighbour_within_fifteen_minutes_after_a_boundary(self):
+    def test_earlier_neighbour_within_the_tolerance_after_a_boundary(self):
         just_after = self.schedule.start(2) + timedelta(minutes=10)
         self.assertTrue(self.client.verify_signature(
             self.signed_by(1, just_after)))
@@ -309,7 +319,7 @@ class KeySelectionTests(unittest.TestCase):
         self.assertTrue(self.client.verify_signature(
             self.signed_by(2, later)))
 
-    def test_later_neighbour_within_fifteen_minutes_before_a_boundary(self):
+    def test_later_neighbour_within_the_tolerance_before_a_boundary(self):
         just_before = self.schedule.start(2) - timedelta(minutes=10)
         self.assertTrue(self.client.verify_signature(
             self.signed_by(2, just_before)))
@@ -390,32 +400,36 @@ class OfflineVerificationTests(unittest.TestCase):
 
     def test_true_for_a_payload_longer_than_the_base(self):
         fod_id = signed_fod_id(self.crypto, payload=context_payload(),
-                               date=self.date, domain="51d.es")
-        self.assertEqual(FodId.PAYLOAD_LENGTH + 19, len(fod_id.payload))
+                               date=self.date)
+        self.assertGreater(len(fod_id.payload), FodId.PAYLOAD_LENGTH)
         self.assertTrue(self.client.verify_signature(fod_id))
 
-    def test_false_for_a_payload_larger_than_a_51did(self):
+    def test_true_for_a_payload_far_longer_than_the_base(self):
+        # A context section of a version this package does not know
+        # about may be any length, so no upper bound is applied here.
+        fod_id = signed_fod_id(
+            self.crypto, payload=context_payload() + bytes(200),
+            date=self.date)
+        self.assertTrue(self.client.verify_signature(fod_id))
+
+    def test_true_for_a_long_creator_domain(self):
+        # The creator domain is a deployment parameter, so a
+        # self-hosted container may sign with a long one.
+        fod_id = signed_fod_id(
+            self.crypto, payload=context_payload(), date=self.date,
+            domain="identifiers." + ("a" * 120) + ".example")
+        self.assertTrue(self.client.verify_signature(fod_id))
+
+    def test_verify_signature_refuses_far_too_long_text(self):
+        # Obviously malformed input is refused before it is decoded
+        # and before any key is fetched.
         with self.assertRaises(ValueError):
-            signed_fod_id(
-                self.crypto,
-                payload=context_payload() + b"\x00",
-                date=self.date,
-                domain="51d.es",
-            )
+            self.client.verify_signature("A" * 5000)
         self.assertEqual(0, self.transport.count("id/key/"))
 
-    def test_false_when_the_full_envelope_is_larger_than_a_51did(self):
+    def test_public_key_for_refuses_far_too_long_text(self):
         with self.assertRaises(ValueError):
-            signed_fod_id(
-                self.crypto,
-                payload=context_payload(),
-                date=self.date,
-            )
-        self.assertEqual(0, self.transport.count("id/key/"))
-
-    def test_rejects_oversized_encoded_value_before_parsing_or_key_fetch(self):
-        with self.assertRaises(ValueError):
-            self.client.verify_signature("A" * 185)
+            self.client.public_key_for("A" * 5000)
         self.assertEqual(0, self.transport.count("id/key/"))
 
 
@@ -464,30 +478,16 @@ class CloudVerifyTests(unittest.TestCase):
         self.assertIn("51did=AwB%2B%2Fx%3D%3D", self.transport.last().full_url)
         self.assertIn("owid=AwB%2B%2Fx%3D%3D", self.transport.last().full_url)
 
-    def test_accepts_maximum_padded_and_unpadded_values(self):
-        fod_id = signed_fod_id(
-            Crypto.new(), payload=context_payload(), domain="51d.es")
-        padded = fod_id.as_base64()
-        unpadded = fod_id.as_base64_url()
-        self.assertEqual(184, len(padded))
-        self.assertEqual(182, len(unpadded))
+    def test_padded_and_unpadded_forms_are_both_accepted(self):
+        fod_id = signed_fod_id(Crypto.new(), payload=context_payload())
         self.transport.answers["id/verify/"] = (200, '{"valid":true}')
-        self.assertTrue(self.client.verify(padded))
-        self.assertTrue(self.client.verify(unpadded))
+        self.assertTrue(self.client.verify(fod_id.as_base64()))
+        self.assertTrue(self.client.verify(fod_id.as_base64_url()))
         self.assertEqual(2, self.transport.count("id/verify/"))
 
-    def test_rejects_185_characters_before_url_encoding_or_transport(self):
+    def test_verify_refuses_far_too_long_text_before_transport(self):
         with self.assertRaises(ValueError):
-            self.client.verify("A" * 185)
-        self.assertEqual(0, len(self.transport.requests))
-
-    def test_rejects_oversized_parsed_value_before_transport(self):
-        with self.assertRaises(ValueError):
-            signed_fod_id(
-                Crypto.new(),
-                payload=context_payload() + b"\x00",
-                domain="51d.es",
-            )
+            self.client.verify("A" * 5000)
         self.assertEqual(0, len(self.transport.requests))
 
     def test_other_status_raises_the_client_error(self):
@@ -679,9 +679,9 @@ class RedeemTests(unittest.TestCase):
         self.assertEqual("AwB-_x", form["51did"])
         self.assertEqual("", form["challenge"])
 
-    def test_rejects_oversized_identifier_before_form_or_transport(self):
+    def test_redeem_refuses_far_too_long_text_before_the_form(self):
         with self.assertRaises(ValueError):
-            self.client.redeem("A" * 185, "sealed-result")
+            self.client.redeem("A" * 5000, "sealed-result")
         self.assertEqual(0, len(self.transport.requests))
 
     def test_result_class_can_be_built_from_a_response_directly(self):

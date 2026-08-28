@@ -67,13 +67,14 @@ DEFAULT_ENDPOINT = "https://cloud.51degrees.com/api/v4/"
 #: base, honoured here when no endpoint argument is given.
 ENDPOINT_VARIABLE = "FOD_CLOUD_API_URL"
 
-#: How far either side of a key boundary a neighbouring key is also tried,
-#: matching the tolerance the cloud applies. A creation time is recorded to
-#: the minute and stamped a moment after the key was chosen, so an
-#: identifier dated a few minutes past a boundary may carry the previous
-#: key's signature, and one dated a few minutes before it may carry the
-#: next.
-BOUNDARY_TOLERANCE = timedelta(minutes=15)
+# How far either side of a key boundary a neighbouring key is also tried,
+# matching the tolerance the cloud applies. A creation time is recorded to
+# the minute and stamped a moment after the key was chosen, so an
+# identifier dated a short time past a boundary may carry the previous
+# key's signature, and one dated a short time before it may carry the
+# next. The tolerance is an implementation detail of this client rather
+# than part of its public surface.
+_BOUNDARY_TOLERANCE = timedelta(minutes=15)
 
 #: A cached key list older than this is fetched again before use.
 KEY_LIST_MAX_AGE = timedelta(days=1)
@@ -84,7 +85,12 @@ SUPPORTED_VERSION = Version.VERSION3
 #: Seconds to wait for the cloud before the default transport gives up.
 DEFAULT_TIMEOUT = 30.0
 
-_MAXIMUM_BASE64_LENGTH = ((FodId.MAXIMUM_BYTE_LENGTH + 2) // 3) * 4
+# The longest encoded identifier this client will look at. This is a guard
+# against obviously malformed input, not a statement about how long a
+# 51Did is, because the lengths an identifier can have belong to the
+# cloud. The figure is arbitrary and generous on purpose so that nothing
+# about the layout of an identifier can be read from it.
+_MAXIMUM_ENCODED_LENGTH = 4096
 
 
 def _package_version() -> str:
@@ -155,7 +161,7 @@ class SignatureReason(str, Enum):
     VERIFIED = "verified"
     #: The envelope version is not the one the cloud signs.
     VERSION = "version"
-    #: The payload or envelope is outside the size accepted for a 51Did.
+    #: The payload is shorter than the base length for its type.
     LENGTH = "length"
     #: No published key covers the identifier's date.
     NO_KEY = "nokey"
@@ -439,10 +445,8 @@ class DidClient:
         list is fetched again, once, before answering when no entry covers
         the date, when the date is later than the newest start held, or
         when the list is more than a day old. Answers ``None`` when the
-        date precedes every published key. Raises :class:`ValueError` before
-        fetching keys when the value is larger than a 51Did can be."""
+        date precedes every published key."""
         identifier = _as_fod_id(fod_id)
-        _ensure_maximum_size(identifier)
         date = _date_of(identifier)
         return _in_force_at(self._keys_for(date), date)
 
@@ -451,14 +455,13 @@ class DidClient:
     def verify_signature(self, fod_id: Union[FodId, str]) -> bool:
         """Verifies the identifier's signature offline against the
         published keys, as the cloud's own verify endpoint does. The
-        envelope version must be the one the cloud signs, the payload and
-        envelope must be within the sizes the cloud issues, and the payload
-        must be at least the base length for its type. The signature must
-        verify against the key in force at the identifier's date or, within
-        fifteen minutes of a boundary, the neighbouring key. No earlier
-        key is ever tried, so a key leaked from one period cannot sign an
-        identifier dated in another. An encoded value larger than a 51Did
-        can be raises :class:`ValueError` before parsing or fetching keys."""
+        envelope version must be the one the cloud signs, the payload must
+        be at least the base length for its type (a longer payload carries
+        a creator context and is accepted), and the signature must verify
+        against the key in force at the identifier's date or, within a
+        short tolerance either side of a period boundary, the
+        neighbouring key. No earlier key is ever tried, so a key leaked
+        from one period cannot sign an identifier dated in another."""
         return self.verify_signature_detailed(fod_id).valid
 
     def verify_signature_detailed(self, fod_id: Union[FodId, str]) \
@@ -489,10 +492,10 @@ class DidClient:
 
         Raises :class:`DidArgumentError` (also a :class:`ValueError`) when
         the cloud could not parse the value as a 51Did, with the cloud's
-        message. A value larger than a 51Did can be raises
-        :class:`ValueError` locally. :class:`DidClientError` is raised on any
-        answer other than valid or invalid. A transport failure raises the
-        :class:`OSError` the transport raised
+        message, and :class:`DidClientError` on any answer other than
+        valid or invalid. Text far longer than any identifier raises
+        :class:`ValueError` before transport. A transport failure raises
+        the :class:`OSError` the transport raised
         (:class:`urllib.error.URLError` by default)."""
         text = _identifier_text(fod_id)
         # The identifier travels under both names so the request works with
@@ -544,8 +547,8 @@ class DidClient:
             endpoint, where one was.
         :raises DidArgumentError: when the cloud could not parse the value
             as a 51Did (HTTP 400), with the cloud's message.
-        :raises ValueError: before transport when the identifier is larger
-            than a 51Did can be.
+        :raises ValueError: before transport when the text is far longer
+            than any identifier.
         :raises DidNotSupportedError: when the host does not offer the
             creator context (HTTP 404).
         :raises DidClientError: on any other status.
@@ -715,7 +718,6 @@ def _identifier_text(value: Union[FodId, str]) -> str:
     goes in the URL-safe alphabet, which needs no further encoding, and a
     string goes as given so the cloud can report its own parse error."""
     if isinstance(value, FodId):
-        _ensure_maximum_size(value)
         return value.as_base64_url()
     if isinstance(value, str) and value != "":
         _ensure_encoded_size(value)
@@ -724,21 +726,14 @@ def _identifier_text(value: Union[FodId, str]) -> str:
 
 
 def _ensure_encoded_size(value: str) -> None:
-    """Rejects text too large to be a 51Did before it is parsed or encoded
-    for transport."""
-    if len(value) > _MAXIMUM_BASE64_LENGTH:
-        raise ValueError("The value is larger than a 51Did can be.")
-
-
-def _maximum_size_valid(fod_id: FodId) -> bool:
-    """Whether a parsed identifier still has valid 51Did lengths."""
-    return fod_id._has_valid_length()
-
-
-def _ensure_maximum_size(fod_id: FodId) -> None:
-    """Raises when a parsed identifier cannot be a Cloud-issued 51Did."""
-    if not _maximum_size_valid(fod_id):
-        raise ValueError("The value is larger than a 51Did can be.")
+    """Refuses obviously malformed text before it is parsed, a key is
+    fetched or the cloud is called. Surrounding whitespace is stripped
+    before measuring, as the reader strips it before decoding, so the two
+    measure the same characters."""
+    if len(value.strip()) > _MAXIMUM_ENCODED_LENGTH:
+        raise ValueError(
+            "The identifier is far longer than any 51Did the cloud "
+            "issues.")
 
 
 def _date_of(fod_id: FodId) -> datetime:
@@ -748,12 +743,14 @@ def _date_of(fod_id: FodId) -> datetime:
 
 
 def _payload_length_valid(fod_id: FodId) -> bool:
-    """Whether the payload has the base for its type and the parsed
-    identifier is within the Cloud-issued size limits."""
+    """Whether the payload is at least the base length for its type, being
+    five header bytes plus a 32 byte match key, or 16 for a Random
+    identifier. Anything beyond the base is a creator context section,
+    whose exact lengths belong to the cloud, so any longer payload is
+    accepted here."""
     value_length = FodId.GUID_LENGTH if fod_id.type is IdType.RANDOM \
         else FodId.HASH_LENGTH
-    return len(fod_id.payload) >= FodId.HEADER_LENGTH + value_length \
-        and _maximum_size_valid(fod_id)
+    return len(fod_id.payload) >= FodId.HEADER_LENGTH + value_length
 
 
 def _in_force_at(keys: List[PublicKeyEntry],
@@ -782,6 +779,6 @@ def _candidates_for_date(keys: List[PublicKeyEntry],
             candidates.append(entry)
 
     add(_in_force_at(keys, at))
-    add(_in_force_at(keys, at - BOUNDARY_TOLERANCE))
-    add(_in_force_at(keys, at + BOUNDARY_TOLERANCE))
+    add(_in_force_at(keys, at - _BOUNDARY_TOLERANCE))
+    add(_in_force_at(keys, at + _BOUNDARY_TOLERANCE))
     return candidates

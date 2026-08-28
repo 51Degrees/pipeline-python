@@ -34,12 +34,6 @@ Identifier) returned by the 51Degrees Cloud service. Mirrors the .NET
 Identifiers issued before the type tag existed have bits 6-7 zeroed and decode
 as `PROBABILISTIC`.
 
-The complete serialized envelope of a valid 51Did is at most 136 bytes.
-`FodId.MAXIMUM_BYTE_LENGTH` exposes that boundary for callers that want to
-check raw input before parsing; every `FodId` construction path also enforces
-it and raises `ValueError` for a longer value. This is a limit on the
-identifier itself, not on an HTTP response that happens to carry one.
-
 ## OWID dependency
 
 `FodId` builds on the OWID envelope library
@@ -129,11 +123,13 @@ signing public keys from the cloud once, caches them for a day, and picks
 the key in force when the identifier was created, being the entry whose
 start is latest on or before the identifier's date (a key stays in force
 until the next one starts, and keys are published up to three months
-ahead). Within fifteen minutes of a boundary the neighbouring key is
-tried as well. No earlier key is ever tried, so a key leaked from one
-period cannot sign an identifier dated in another. The envelope version
-must be the one the cloud signs and the payload at least the base length
-for its type.
+ahead). Within a short tolerance either side of a boundary the
+neighbouring key is tried as well. No earlier key is ever tried, so a
+key leaked from one period cannot sign an identifier dated in another.
+The envelope version must be the one the cloud signs and the payload at
+least the base length for its type, and a longer payload carries a
+creator context and is accepted, its exact lengths being for the cloud
+to judge.
 
 ```python
 valid = client.verify_signature(fod_id)            # bool
