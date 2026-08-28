@@ -116,9 +116,8 @@ class KeySchedule:
         return self.entries[index][1]
 
     def json(self, start_field="startsAt"):
-        """The key list body. ``start_field`` is ``startsAt`` as the
-        creator context release emits, or ``created`` as the endpoint
-        before it emitted (with the generation time as the only date)."""
+        """The key list body. ``start_field`` is either supported start
+        field, ``startsAt`` or the compatibility field ``created``."""
         keys = []
         for starts_at, crypto in self.entries:
             entry = {"publicKey": crypto.public_key_pem()}

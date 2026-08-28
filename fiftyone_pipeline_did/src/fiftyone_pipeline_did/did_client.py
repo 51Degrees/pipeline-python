@@ -487,10 +487,9 @@ class DidClient:
         or invalid. A transport failure raises the :class:`OSError` the
         transport raised (:class:`urllib.error.URLError` by default)."""
         text = _identifier_text(fod_id)
-        # The identifier travels under both names. The creator context
-        # release names the parameter 51did and keeps owid as an alias,
-        # while a cloud that has not taken that release reads owid only
-        # and answers 400 to a request carrying 51did alone.
+        # The identifier travels under both names so the request works with
+        # hosts that read either parameter. Hosts that recognise both prefer
+        # 51did and keep owid as a compatibility alias.
         encoded = urllib.parse.quote(text, safe="")
         url = "{0}id/verify/{1}?51did={2}&owid={2}".format(
             self._endpoint, urllib.parse.quote(self._resource_key, safe=""),
@@ -638,10 +637,9 @@ class DidClient:
 
     def _fetch_keys(self) -> List[PublicKeyEntry]:
         """GET ``id/key/{resource}`` and read each entry's start and public
-        key. ``startsAt`` is read where present and ``created`` otherwise,
-        because the endpoint as deployed before the creator context release
-        emits ``created`` and ``publicKey`` only. ``weekStart`` is
-        ignored."""
+        key. ``startsAt`` is read where present and ``created`` otherwise.
+        Both are supported start fields in key-list responses. ``weekStart``
+        is ignored."""
         url = "{0}id/key/{1}".format(
             self._endpoint, urllib.parse.quote(self._resource_key, safe=""))
         status, body = self._send(urllib.request.Request(

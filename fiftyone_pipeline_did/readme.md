@@ -141,8 +141,8 @@ key = client.public_key_for(fod_id)  # the entry in force, or None
 **3. Verify the signature through the cloud.** The open `verify`
 endpoint, one use against the resource key and no licence key needed. The
 identifier is sent under both the `51did` and `owid` query names, so the
-call works against a cloud that has taken the creator context release and
-one that has not. A value the cloud cannot parse as a 51Did raises
+call works with hosts that read either parameter. A value the cloud cannot
+parse as a 51Did raises
 `DidArgumentError` (a `ValueError`) carrying the cloud's message.
 
 ```python

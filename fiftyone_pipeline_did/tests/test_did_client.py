@@ -412,8 +412,7 @@ class CloudVerifyTests(unittest.TestCase):
         parsed = urllib.parse.urlparse(request.full_url)
         self.assertEqual("/api/v4/id/verify/" + RESOURCE, parsed.path)
         query = urllib.parse.parse_qs(parsed.query)
-        # Under both names: 51did for the creator context release and
-        # owid for a cloud that has not taken it, which reads owid only.
+        # Under both names so hosts that read either parameter can verify it.
         self.assertEqual([self.fod_id.as_base64_url()], query["51did"])
         self.assertEqual([self.fod_id.as_base64_url()], query["owid"])
         self.assertEqual({"51did", "owid"}, set(query))
