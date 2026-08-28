@@ -20,16 +20,55 @@
 # such notice(s) shall fulfill the requirements of that article.
 # *********************************************************************
 
-"""Strongly typed reader for the 51Did (51Degrees Identifier) value.
+"""Strongly typed reader and cloud client for the 51Did (51Degrees
+Identifier) value.
 
 :class:`~fiftyone_pipeline_did.fod_id.FodId` parses a 51Did from its base64
-OWID form, exposes the three payload fields (Flags, License Id and the value
-Hash) and the identifier :class:`~fiftyone_pipeline_did.id_type.IdType`, and
-delegates OWID-level concerns to the wrapped envelope. Compare 51Dids by their
-value (``hash``), never by their envelopes.
+OWID form in either alphabet, exposes the three payload fields (Flags,
+License Id and the value Hash) and the identifier
+:class:`~fiftyone_pipeline_did.id_type.IdType`, and delegates OWID-level
+concerns to the wrapped envelope. Compare 51Dids by their value (``hash``),
+never by their envelopes.
+
+:class:`~fiftyone_pipeline_did.did_client.DidClient` handles every
+manipulation of a 51Did a server needs against the 51Degrees cloud: the
+signing public keys and the key in force when an identifier was created,
+offline and cloud signature verification, and redeeming a sealed creator
+context result with the licence key into a typed
+:class:`~fiftyone_pipeline_did.did_client.RedeemResult`.
 """
 
-from .fod_id import FodId
+from .did_client import (
+    DEFAULT_ENDPOINT,
+    ContextResult,
+    DidArgumentError,
+    DidClient,
+    DidClientError,
+    DidNotSupportedError,
+    FactorResult,
+    PublicKeyEntry,
+    RedeemResult,
+    SignatureCheck,
+    SignatureReason,
+    SignatureResult,
+)
+from .fod_id import DATE_EPOCH, FodId
 from .id_type import IdType
 
-__all__ = ["FodId", "IdType"]
+__all__ = [
+    "FodId",
+    "IdType",
+    "DATE_EPOCH",
+    "DidClient",
+    "RedeemResult",
+    "PublicKeyEntry",
+    "SignatureCheck",
+    "ContextResult",
+    "SignatureResult",
+    "FactorResult",
+    "SignatureReason",
+    "DidClientError",
+    "DidArgumentError",
+    "DidNotSupportedError",
+    "DEFAULT_ENDPOINT",
+]
