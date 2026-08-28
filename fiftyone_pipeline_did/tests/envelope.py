@@ -82,12 +82,13 @@ def signed_envelope(crypto, payload, date=None, version=Version.VERSION3,
 
 
 def signed_fod_id(crypto, payload=None, date=None,
-                  version=Version.VERSION3):
+                  version=Version.VERSION3, domain=TEST_DOMAIN):
     """A FodId over a signed envelope, Probabilistic unless a payload is
     given."""
     if payload is None:
         payload = probabilistic_payload()
-    return FodId.from_owid(signed_envelope(crypto, payload, date, version))
+    return FodId.from_owid(signed_envelope(
+        crypto, payload, date, version, domain))
 
 
 def iso_round_trip(moment):
