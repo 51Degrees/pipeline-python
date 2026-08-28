@@ -284,7 +284,11 @@ class PublicKeyTests(unittest.TestCase):
 class KeySelectionTests(unittest.TestCase):
     """Section 2.2 step 3: the key in force and its neighbours within the
     boundary tolerance, checked through the offline verification, which
-    is what the selection is for."""
+    is what the selection is for.
+
+    The dates below sit a long way either side of the allowance rather
+    than close to it, because these tests are here to prove which key is
+    tried and must not record how wide the allowance is."""
 
     def setUp(self):
         self.schedule = KeySchedule()
@@ -306,28 +310,32 @@ class KeySelectionTests(unittest.TestCase):
                          .starts_at)
 
     def test_earlier_neighbour_within_the_tolerance_after_a_boundary(self):
-        just_after = self.schedule.start(2) + timedelta(minutes=10)
+        # Comfortably inside the allowance, so both keys are tried.
+        just_after = self.schedule.start(2) + timedelta(minutes=1)
         self.assertTrue(self.client.verify_signature(
             self.signed_by(1, just_after)))
         self.assertTrue(self.client.verify_signature(
             self.signed_by(2, just_after)))
 
     def test_earlier_neighbour_not_tried_beyond_the_tolerance(self):
-        later = self.schedule.start(2) + timedelta(minutes=16)
+        # Far enough past the boundary to be outside any allowance.
+        later = self.schedule.start(2) + timedelta(hours=1)
         self.assertFalse(self.client.verify_signature(
             self.signed_by(1, later)))
         self.assertTrue(self.client.verify_signature(
             self.signed_by(2, later)))
 
     def test_later_neighbour_within_the_tolerance_before_a_boundary(self):
-        just_before = self.schedule.start(2) - timedelta(minutes=10)
+        # Comfortably inside the allowance, so both keys are tried.
+        just_before = self.schedule.start(2) - timedelta(minutes=1)
         self.assertTrue(self.client.verify_signature(
             self.signed_by(2, just_before)))
         self.assertTrue(self.client.verify_signature(
             self.signed_by(1, just_before)))
 
     def test_later_neighbour_not_tried_beyond_the_tolerance(self):
-        earlier = self.schedule.start(2) - timedelta(minutes=16)
+        # Far enough before the boundary to be outside any allowance.
+        earlier = self.schedule.start(2) - timedelta(hours=1)
         self.assertFalse(self.client.verify_signature(
             self.signed_by(2, earlier)))
 
