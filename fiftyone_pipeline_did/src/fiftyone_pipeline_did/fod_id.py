@@ -75,6 +75,10 @@ class FodId:
     RANDOM_PAYLOAD_LENGTH = HEADER_LENGTH + GUID_LENGTH
     #: Minimum byte length of a Probabilistic or HashedEmail 51Did payload.
     PAYLOAD_LENGTH = HASH_OFFSET + HASH_LENGTH
+    #: Largest possible byte length of a serialized 51Did envelope.
+    MAXIMUM_BYTE_LENGTH = 136
+
+    _MAXIMUM_PAYLOAD_LENGTH = 56
 
     def __init__(self, owid: Owid) -> None:
         """Promotes an already-parsed :class:`owid.Owid` into a 51Did by
@@ -86,13 +90,23 @@ class FodId:
         (serializable).
 
         Raises :class:`TypeError` if ``owid`` is ``None``, :class:`ValueError`
-        if the payload is shorter than the minimum for its identifier type, and
+        if the envelope exceeds :attr:`MAXIMUM_BYTE_LENGTH` or the payload
+        length is outside the range a 51Did can have, and
         :class:`owid.OwidError` if the OWID cannot be serialized (e.g. it is
         unsigned).
         """
         if owid is None:
             raise TypeError("owid must not be None")
-        self._owid = Owid.from_byte_array(owid.as_byte_array())
+        source_payload = owid.payload
+        if len(owid.domain) > self.MAXIMUM_BYTE_LENGTH:
+            raise self._too_long()
+        wire = owid.as_byte_array()
+        if len(wire) > self.MAXIMUM_BYTE_LENGTH:
+            raise self._too_long(len(wire))
+        if len(source_payload) > self._MAXIMUM_PAYLOAD_LENGTH:
+            raise self._payload_too_long(len(source_payload))
+        self._byte_length = len(wire)
+        self._owid = Owid.from_byte_array(wire)
         payload = self._owid.payload
         if payload is None or len(payload) < self.HEADER_LENGTH:
             raise ValueError(
@@ -140,12 +154,17 @@ class FodId:
         by normalising to the standard form before decoding, so a server
         never converts an identifier it received from a link.
 
-        Raises :class:`TypeError` if ``base64`` is ``None`` and
+        Raises :class:`TypeError` if ``base64`` is ``None``,
+        :class:`ValueError` if the decoded envelope is too long, and
         :class:`owid.OwidError` if it is not valid base64 or not a valid OWID.
         """
         if base64 is None:
             raise TypeError("base64 must not be None")
-        return cls(Owid.from_base64(cls.to_standard_base64(base64)))
+        standard = cls.to_standard_base64(base64)
+        maximum_base64_length = ((cls.MAXIMUM_BYTE_LENGTH + 2) // 3) * 4
+        if len(standard) > maximum_base64_length:
+            raise cls._too_long()
+        return cls(Owid.from_base64(standard))
 
     @staticmethod
     def to_standard_base64(value: str) -> str:
@@ -176,12 +195,38 @@ class FodId:
     def from_byte_array(cls, buffer: bytes) -> "FodId":
         """Parses a 51Did from the raw bytes of an OWID envelope.
 
-        Raises :class:`TypeError` if ``buffer`` is ``None`` and
+        Raises :class:`TypeError` if ``buffer`` is ``None``,
+        :class:`ValueError` if it exceeds :attr:`MAXIMUM_BYTE_LENGTH`, and
         :class:`owid.OwidError` if the bytes are not a valid OWID.
         """
         if buffer is None:
             raise TypeError("buffer must not be None")
+        if len(buffer) > cls.MAXIMUM_BYTE_LENGTH:
+            raise cls._too_long(len(buffer))
         return cls(Owid.from_byte_array(buffer))
+
+    @classmethod
+    def _too_long(cls, actual: int | None = None) -> ValueError:
+        detail = "" if actual is None else "; got {0}".format(actual)
+        return ValueError(
+            "A 51Did must not exceed {0} bytes{1}.".format(
+                cls.MAXIMUM_BYTE_LENGTH, detail
+            )
+        )
+
+    @classmethod
+    def _payload_too_long(cls, actual: int) -> ValueError:
+        return ValueError(
+            "A 51Did payload must not exceed {0} bytes; got {1}.".format(
+                cls._MAXIMUM_PAYLOAD_LENGTH, actual
+            )
+        )
+
+    def _has_valid_length(self) -> bool:
+        """Internal defensive check used by :class:`DidClient`."""
+        return len(self.payload) <= self._MAXIMUM_PAYLOAD_LENGTH \
+            and len(self.signature) == 64 \
+            and self._byte_length <= self.MAXIMUM_BYTE_LENGTH
 
     @classmethod
     def from_owid(cls, owid: Owid) -> "FodId":
@@ -191,7 +236,8 @@ class FodId:
         form), not aliases it, so a ``FodId`` can never desync from its
         envelope if the caller later mutates the OWID it passed in. The
         supplied OWID must therefore be signed (serializable). Raises
-        :class:`TypeError` if ``owid`` is ``None``.
+        :class:`TypeError` if ``owid`` is ``None`` and :class:`ValueError` if
+        its envelope is too long to be a 51Did.
         """
         if owid is None:
             raise TypeError("owid must not be None")

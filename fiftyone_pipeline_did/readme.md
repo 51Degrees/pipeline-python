@@ -34,6 +34,12 @@ Identifier) returned by the 51Degrees Cloud service. Mirrors the .NET
 Identifiers issued before the type tag existed have bits 6-7 zeroed and decode
 as `PROBABILISTIC`.
 
+The complete serialized envelope of a valid 51Did is at most 136 bytes.
+`FodId.MAXIMUM_BYTE_LENGTH` exposes that boundary for callers that want to
+check raw input before parsing; every `FodId` construction path also enforces
+it and raises `ValueError` for a longer value. This is a limit on the
+identifier itself, not on an HTTP response that happens to carry one.
+
 ## OWID dependency
 
 `FodId` builds on the OWID envelope library

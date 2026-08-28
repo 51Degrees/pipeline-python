@@ -84,11 +84,7 @@ SUPPORTED_VERSION = Version.VERSION3
 #: Seconds to wait for the cloud before the default transport gives up.
 DEFAULT_TIMEOUT = 30.0
 
-# The limits of a 51Did issued by the Cloud. These remain implementation
-# details of this client rather than additions to the public FodId API.
-_MAXIMUM_PAYLOAD_LENGTH = 56
-_MAXIMUM_BYTE_LENGTH = 136
-_MAXIMUM_BASE64_LENGTH = 184
+_MAXIMUM_BASE64_LENGTH = ((FodId.MAXIMUM_BYTE_LENGTH + 2) // 3) * 4
 
 
 def _package_version() -> str:
@@ -735,16 +731,8 @@ def _ensure_encoded_size(value: str) -> None:
 
 
 def _maximum_size_valid(fod_id: FodId) -> bool:
-    """Whether a parsed identifier is within the Cloud-issued limits.
-
-    The cheap field checks bound the temporary serialization used for the
-    definitive envelope-length check, including for a caller-built FodId.
-    """
-    if len(fod_id.payload) > _MAXIMUM_PAYLOAD_LENGTH \
-            or len(fod_id.domain) > _MAXIMUM_BYTE_LENGTH \
-            or len(fod_id.signature) != 64:
-        return False
-    return len(fod_id.as_byte_array()) <= _MAXIMUM_BYTE_LENGTH
+    """Whether a parsed identifier still has valid 51Did lengths."""
+    return fod_id._has_valid_length()
 
 
 def _ensure_maximum_size(fod_id: FodId) -> None:

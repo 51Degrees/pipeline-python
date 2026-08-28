@@ -395,26 +395,22 @@ class OfflineVerificationTests(unittest.TestCase):
         self.assertTrue(self.client.verify_signature(fod_id))
 
     def test_false_for_a_payload_larger_than_a_51did(self):
-        fod_id = signed_fod_id(
-            self.crypto,
-            payload=context_payload() + b"\x00",
-            date=self.date,
-            domain="51d.es",
-        )
-        check = self.client.verify_signature_detailed(fod_id)
-        self.assertFalse(check.valid)
-        self.assertEqual(SignatureReason.LENGTH, check.reason)
+        with self.assertRaises(ValueError):
+            signed_fod_id(
+                self.crypto,
+                payload=context_payload() + b"\x00",
+                date=self.date,
+                domain="51d.es",
+            )
         self.assertEqual(0, self.transport.count("id/key/"))
 
     def test_false_when_the_full_envelope_is_larger_than_a_51did(self):
-        fod_id = signed_fod_id(
-            self.crypto,
-            payload=context_payload(),
-            date=self.date,
-        )
-        check = self.client.verify_signature_detailed(fod_id)
-        self.assertFalse(check.valid)
-        self.assertEqual(SignatureReason.LENGTH, check.reason)
+        with self.assertRaises(ValueError):
+            signed_fod_id(
+                self.crypto,
+                payload=context_payload(),
+                date=self.date,
+            )
         self.assertEqual(0, self.transport.count("id/key/"))
 
     def test_rejects_oversized_encoded_value_before_parsing_or_key_fetch(self):
@@ -486,13 +482,12 @@ class CloudVerifyTests(unittest.TestCase):
         self.assertEqual(0, len(self.transport.requests))
 
     def test_rejects_oversized_parsed_value_before_transport(self):
-        fod_id = signed_fod_id(
-            Crypto.new(),
-            payload=context_payload() + b"\x00",
-            domain="51d.es",
-        )
         with self.assertRaises(ValueError):
-            self.client.verify(fod_id)
+            signed_fod_id(
+                Crypto.new(),
+                payload=context_payload() + b"\x00",
+                domain="51d.es",
+            )
         self.assertEqual(0, len(self.transport.requests))
 
     def test_other_status_raises_the_client_error(self):
