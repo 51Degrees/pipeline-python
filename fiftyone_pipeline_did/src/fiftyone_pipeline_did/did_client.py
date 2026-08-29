@@ -54,7 +54,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from owid import Version
+from ._owid import Version
 
 from .fod_id import DATE_EPOCH, FodId
 from .id_type import IdType

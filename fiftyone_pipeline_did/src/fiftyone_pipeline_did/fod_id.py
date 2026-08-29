@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from owid import Owid, Version
+from ._owid import Owid, Version
 
 from .id_type import IdType
 
@@ -39,8 +39,9 @@ class FodId:
     returned by the 51Degrees Cloud service.
 
     A 51Did is described at three levels. The **51Did** is the identifier as a
-    whole. The **envelope** is the signed :class:`owid.Owid` that carries it
-    (version, domain, date, payload, signature), re-issued fresh on every call.
+    whole. The **envelope** is the signed
+    :class:`~fiftyone_pipeline_did.Owid` that carries it (version, domain,
+    date, payload, signature), re-issued fresh on every call.
     The **value** is the stable, comparable part of the payload after the Flags
     and License Id, exposed as :attr:`hash`. Two 51Dids for the same inputs
     share the same value even though their envelopes differ. *Compare values,
@@ -77,8 +78,8 @@ class FodId:
     PAYLOAD_LENGTH = HASH_OFFSET + HASH_LENGTH
 
     def __init__(self, owid: Owid) -> None:
-        """Promotes an already-parsed :class:`owid.Owid` into a 51Did by
-        unpacking its payload.
+        """Promotes an already-parsed :class:`~fiftyone_pipeline_did.Owid`
+        into a 51Did by unpacking its payload.
 
         The OWID is **copied** (round-tripped through its byte form), not
         aliased, so a ``FodId`` can never desync from its envelope if the caller
@@ -87,8 +88,8 @@ class FodId:
 
         Raises :class:`TypeError` if ``owid`` is ``None``, :class:`ValueError`
         if the payload is shorter than the minimum for its identifier type, and
-        :class:`owid.OwidError` if the OWID cannot be serialized (e.g. it is
-        unsigned).
+        :class:`~fiftyone_pipeline_did.OwidError` if the OWID cannot be
+        serialized (e.g. it is unsigned).
         """
         if owid is None:
             raise TypeError("owid must not be None")
@@ -141,7 +142,8 @@ class FodId:
         never converts an identifier it received from a link.
 
         Raises :class:`TypeError` if ``base64`` is ``None`` and
-        :class:`owid.OwidError` if it is not valid base64 or not a valid OWID.
+        :class:`~fiftyone_pipeline_did.OwidError` if it is not valid base64
+        or not a valid OWID.
         """
         if base64 is None:
             raise TypeError("base64 must not be None")
@@ -177,7 +179,8 @@ class FodId:
         """Parses a 51Did from the raw bytes of an OWID envelope.
 
         Raises :class:`TypeError` if ``buffer`` is ``None`` and
-        :class:`owid.OwidError` if the bytes are not a valid OWID.
+        :class:`~fiftyone_pipeline_did.OwidError` if the bytes are not a
+        valid OWID.
         """
         if buffer is None:
             raise TypeError("buffer must not be None")

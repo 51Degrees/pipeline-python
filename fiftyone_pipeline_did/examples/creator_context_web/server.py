@@ -80,8 +80,9 @@ HERE = Path(__file__).resolve().parent
 # The package from this repository rather than a published one, so the
 # branch is what runs. When the package is installed the import succeeds
 # directly, and otherwise the package source beside this example is used,
-# which is how a checkout runs the demo without an install step. The OWID
-# library the package builds on must be installed either way (see the
+# which is how a checkout runs the demo without an install step. Running
+# from the source needs the OWID copy that ci/copy-owid-source.ps1 puts in
+# place, so run pwsh ./setup.ps1 from the repository root first (see the
 # package readme).
 try:
     from fiftyone_pipeline_did import (

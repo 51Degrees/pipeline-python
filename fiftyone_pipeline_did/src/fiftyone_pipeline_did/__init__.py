@@ -52,6 +52,12 @@ from .did_client import (
     SignatureReason,
     SignatureResult,
 )
+# The OWID library is carried inside this package as the private module
+# _owid, because it cannot be installed from a package registry (see the
+# package readme). The envelope type and the error type are re-exported here
+# so that callers have supported names for the two of them that the public
+# API refers to, as the private module itself is not part of that API.
+from ._owid import Owid, OwidError
 from .fod_id import DATE_EPOCH, FodId
 from .id_type import IdType
 
@@ -71,4 +77,6 @@ __all__ = [
     "DidArgumentError",
     "DidNotSupportedError",
     "DEFAULT_ENDPOINT",
+    "Owid",
+    "OwidError",
 ]

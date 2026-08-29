@@ -255,3 +255,8 @@ dependency_links.txt
 top_level.txt
 
 .tox/
+
+# The OWID source copied into the 51Did package at build time by
+# ci/copy-owid-source.ps1. The submodule is the only copy that belongs in
+# the repository.
+fiftyone_pipeline_did/src/fiftyone_pipeline_did/_owid/

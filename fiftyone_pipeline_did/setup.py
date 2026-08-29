@@ -46,16 +46,21 @@ setuptools.setup(
     long_description=read("readme.md"),
     long_description_content_type='text/markdown',
     python_requires=">=3.9",
-    packages=["fiftyone_pipeline_did"],
+    packages=["fiftyone_pipeline_did", "fiftyone_pipeline_did._owid"],
     package_dir={"": "src"},
-    # OWID is provided by the 51Degrees owid-python fork, which is consumed via
-    # the git submodule / editable install (see tox.ini) rather than declared as
-    # a PyPI dependency. The name "owid" on PyPI belongs to an unrelated project,
-    # and the 51Degrees fork is not published to PyPI, so a bare
-    # install_requires=['owid'] would resolve to the wrong package. If this
-    # package is ever published standalone, depend on a 51Degrees-namespaced
-    # OWID distribution here instead.
-    install_requires=[],
+    # The OWID source is carried inside this package as the private module
+    # fiftyone_pipeline_did._owid, copied out of the 51Degrees owid-python
+    # fork by ci/copy-owid-source.ps1 before the distribution is built. It
+    # cannot
+    # come from a package registry, because the 51Degrees fork is not
+    # published to PyPI and the name "owid" there belongs to an unrelated
+    # project, so a bare install_requires=["owid"] would install the wrong
+    # thing. The module is private (leading underscore) so that installing
+    # this package never claims the top level name "owid" on a consumer's
+    # machine. Its only third party requirement is cryptography, which is
+    # declared below and does come from PyPI.
+    package_data={"fiftyone_pipeline_did._owid": ["LICENSE", "NOTICE"]},
+    install_requires=["cryptography>=41"],
     license="EUPL-1.2",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
