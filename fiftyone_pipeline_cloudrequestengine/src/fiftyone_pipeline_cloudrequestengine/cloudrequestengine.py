@@ -76,6 +76,14 @@ class CloudRequestEngine(Engine):
             self.resource_key = settings["resource_key"]
         
         
+        # The endpoint is the cloud_endpoint setting, then the
+        # FOD_CLOUD_API_URL environment variable, then
+        # cloud.51degrees.com. A host other than cloud.51degrees.com
+        # would be used to (a) use an on premise web server, or (b) use
+        # a privately hosted version of the 51Degrees cloud for
+        # performance reasons. That is the private hosting option of
+        # the cloud service, and both run the same service, so callers
+        # work unchanged against either.
         if "cloud_endpoint" in settings:
             self.baseURL = settings["cloud_endpoint"]
         else:

@@ -208,6 +208,19 @@ class FodIdTests(unittest.TestCase):
         self.assertEqual(CANONICAL_HASH, fod.hash)
         self.assertEqual(FodId.HASH_LENGTH, len(fod.hash))
 
+    def test_long_envelope_parses_and_keeps_the_header_fields(self):
+        # No upper bound belongs in the reader: a creator domain is a
+        # deployment parameter and a context section of a version this
+        # package does not know about may be any length.
+        payload = bytearray(canonical_payload()) + bytearray(200)
+        owid = Owid(domain="identifiers." + ("a" * 120) + ".example",
+                    payload=bytes(payload), signature=bytes(64))
+        fod = FodId.from_base64(owid.as_base64())
+        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
+        self.assertEqual(CANONICAL_HASH, fod.hash)
+        self.assertEqual(FodId.HASH_LENGTH, len(fod.hash))
+
     def test_is_cryptographically_verifiable(self):
         fod = FodId.from_base64(
             self.factory.signed_owid_base64(canonical_payload()))

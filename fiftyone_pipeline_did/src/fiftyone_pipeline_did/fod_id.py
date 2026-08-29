@@ -22,11 +22,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from owid import Owid, Version
 
 from .id_type import IdType
+
+#: The moment the envelope's date field counts minutes from, being the OWID
+#: epoch of 2020-01-01T00:00:00Z. :attr:`FodId.date_minutes` is the unsigned
+#: 32-bit count of minutes since this moment.
+DATE_EPOCH = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
 
 class FodId:
@@ -126,14 +131,46 @@ class FodId:
 
     @classmethod
     def from_base64(cls, base64: str) -> "FodId":
-        """Parses a 51Did from its base64-encoded OWID string.
+        """Parses a 51Did from its base64-encoded OWID string in either
+        alphabet.
+
+        The cloud issues a 51Did in the standard alphabet with padding, and a
+        page puts one in a link in the URL-safe alphabet (``-`` and ``_``)
+        without padding. Both are accepted here, with or without padding,
+        by normalising to the standard form before decoding, so a server
+        never converts an identifier it received from a link.
 
         Raises :class:`TypeError` if ``base64`` is ``None`` and
         :class:`owid.OwidError` if it is not valid base64 or not a valid OWID.
         """
         if base64 is None:
             raise TypeError("base64 must not be None")
-        return cls(Owid.from_base64(base64))
+        return cls(Owid.from_base64(cls.to_standard_base64(base64)))
+
+    @staticmethod
+    def to_standard_base64(value: str) -> str:
+        """Restores a base64 string in either alphabet to the standard
+        alphabet with padding, which is the form the OWID library decodes.
+
+        ``-`` becomes ``+`` and ``_`` becomes ``/``, then ``==`` is added
+        when the length modulo 4 is 2 and ``=`` when it is 3. A value already
+        in the standard padded form is returned unchanged.
+        """
+        cleaned = value.strip().replace("-", "+").replace("_", "/")
+        remainder = len(cleaned) % 4
+        if remainder == 2:
+            cleaned += "=="
+        elif remainder == 3:
+            cleaned += "="
+        return cleaned
+
+    @staticmethod
+    def to_base64_url(value: str) -> str:
+        """Converts a base64 string in either alphabet to the URL-safe
+        alphabet without padding, the inverse of :meth:`to_standard_base64`,
+        so a 51Did can be placed in a URL without further encoding.
+        """
+        return value.strip().replace("+", "-").replace("/", "_").rstrip("=")
 
     @classmethod
     def from_byte_array(cls, buffer: bytes) -> "FodId":
@@ -172,7 +209,14 @@ class FodId:
 
     @property
     def license_id(self) -> int:
-        """The 4-byte little-endian License Id (0 to 4294967295)."""
+        """The raw value of the 4-byte little-endian License Id field
+        (0 to 4294967295).
+
+        On an identifier carrying a creator context, the four bytes at
+        offset 1 hold an encrypted value that only 51Degrees can turn back
+        into a licence identifier, so this property is the field's raw value
+        and identifies nothing outside 51Degrees.
+        """
         return self._license_id
 
     @property
@@ -196,8 +240,19 @@ class FodId:
 
     @property
     def date(self) -> datetime:
-        """The OWID creation date."""
+        """The OWID creation date, as an aware UTC datetime."""
         return self._owid.date
+
+    @property
+    def date_minutes(self) -> int:
+        """The envelope's own date as the unsigned 32-bit count of minutes
+        since :data:`DATE_EPOCH` (2020-01-01T00:00:00Z).
+
+        This is the value the envelope carries on the wire and the value the
+        OWID ``public-key?date=`` parameter takes, so a caller comparing
+        creation times gets the integer rather than a converted date.
+        """
+        return int((self._owid.date - DATE_EPOCH).total_seconds() // 60)
 
     @property
     def payload(self) -> bytes:
@@ -210,8 +265,14 @@ class FodId:
         return self._owid.signature
 
     def as_base64(self) -> str:
-        """Returns the OWID as a base64 string."""
+        """Returns the OWID as a standard base64 string with padding, the
+        form the cloud issues."""
         return self._owid.as_base64()
+
+    def as_base64_url(self) -> str:
+        """Returns the OWID as a URL-safe base64 string without padding, the
+        form to place in a URL. :meth:`from_base64` accepts it back."""
+        return self.to_base64_url(self.as_base64())
 
     def as_byte_array(self) -> bytes:
         """Returns the OWID as a byte array including the signature."""
