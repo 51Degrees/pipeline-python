@@ -38,9 +38,34 @@ as `PROBABILISTIC`.
 
 `FodId` builds on the OWID envelope library
 ([SWAN-community/owid-python](https://github.com/SWAN-community/owid-python),
-package `owid`), consumed via the `51Degrees/owid-python` fork (git submodule;
-switch to upstream once published). `Owid` is composed, not subclassed:
-`FodId` holds an `Owid` and delegates OWID-level concerns to it.
+package `owid`), consumed via the
+[51Degrees/owid-python](https://github.com/51Degrees/owid-python) fork, which
+is a git submodule of this repository and will move to upstream once that is
+published. `Owid` is composed, not subclassed, so `FodId` holds an `Owid` and
+delegates OWID-level concerns to it.
+
+The published package does not take OWID from PyPI. The 51Degrees fork is not
+published there, and the name `owid` on PyPI belongs to an unrelated project,
+so a declared dependency would install the wrong thing. Instead
+`ci/copy-owid-source.ps1` copies the fork's source into the package as the
+private module `fiftyone_pipeline_did._owid` before the distribution is built,
+carrying the Apache-2.0 licence and a notice naming the source commit with it.
+The leading underscore keeps the top level name `owid` free on the consumer's
+machine. The only third party requirement the package declares is
+`cryptography`, which OWID uses for the signatures.
+
+Nothing changes for a developer working in this repository, because the
+submodule stays where it is and the same script puts the copy in place.
+Run `pwsh ./setup.ps1` from the repository root, or
+`git submodule update --init --recursive` followed by
+`pwsh ./ci/copy-owid-source.ps1`, before building or running the tests. The
+tests and examples import the fork under its own name, `owid`, which is how
+they build signed envelopes to test against.
+
+The two OWID types the public API refers to are re-exported from the package
+itself, so a caller never has to reach into the private module. Catch
+`fiftyone_pipeline_did.OwidError` for an OWID level failure, and use
+`fiftyone_pipeline_did.Owid` for the envelope that `FodId.from_owid` takes.
 
 ## Usage
 

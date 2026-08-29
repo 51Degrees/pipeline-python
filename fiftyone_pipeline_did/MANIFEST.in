@@ -1,2 +1,7 @@
 include version.txt
 include readme.md
+# The OWID source carried inside this package under the private name _owid is
+# Apache-2.0, so its licence and the notice naming where the source came from
+# have to travel with it in both the sdist and the wheel.
+include src/fiftyone_pipeline_did/_owid/LICENSE
+include src/fiftyone_pipeline_did/_owid/NOTICE

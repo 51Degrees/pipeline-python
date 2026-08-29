@@ -24,9 +24,9 @@ import base64
 import unittest
 from datetime import datetime, timezone
 
-from owid import Owid, Crypto, Creator, OwidError
+from owid import Owid, Crypto, Creator
 
-from fiftyone_pipeline_did import FodId, IdType
+from fiftyone_pipeline_did import FodId, IdType, OwidError
 
 TEST_DOMAIN = "51degrees.com"
 # 0xA5: usage bits plus the HashedEmail type tag in bits 6-7.
