@@ -605,6 +605,51 @@ class FodIdTryParseTests(unittest.TestCase):
         self.assert_failed(FodId.try_from_byte_array("AwB="),
                            FodIdParseStatus.INVALID_INPUT_TYPE)
 
+    # ----- A date the runtime cannot hold -----
+
+    def _dated_past_the_year_9999(self):
+        """A signed envelope whose four byte minute count is 0xFFFFFFFF,
+        which the wire format allows and which lands on 15 February 10186,
+        past the end of the year 9999 where ``datetime`` stops. The bytes
+        are changed after signing, which is fine because the read refuses
+        the date before any signature is looked at."""
+        raw = bytearray(self.factory.signed_bytes(canonical_payload()))
+        # The four little endian date bytes sit after the version byte, the
+        # domain and its terminator.
+        at = 1 + raw.index(0, 1) + 1
+        raw[at:at + 4] = bytes([0xFF] * 4)
+        return bytes(raw)
+
+    def test_date_past_the_year_9999_is_implementation_capacity_exceeded(
+            self):
+        # The OWID reader judges the count before the arithmetic, so the
+        # read answers with a status instead of raising OverflowError, and
+        # the 51Did surface carries that status through unchanged on both
+        # the byte and the base64 surface. The same bytes read fine where
+        # the date type is wider, so the status is the runtime's limit and
+        # not a fault in the data.
+        raw = self._dated_past_the_year_9999()
+        self.assertIs(ParseStatus.IMPLEMENTATION_CAPACITY_EXCEEDED,
+                      Owid.parse_bytes(raw).status)
+        self.assert_failed(
+            FodId.try_from_byte_array(raw),
+            FodIdParseStatus.IMPLEMENTATION_CAPACITY_EXCEEDED)
+        self.assert_failed(
+            FodId.try_from_base64(base64.b64encode(raw).decode()),
+            FodIdParseStatus.IMPLEMENTATION_CAPACITY_EXCEEDED)
+
+    def test_raising_readers_name_the_date_the_runtime_cannot_hold(self):
+        # The raising readers run the same walk, so the date is the
+        # documented OwidError with the status in the message, never the
+        # OverflowError the arithmetic would have raised.
+        raw = self._dated_past_the_year_9999()
+        with self.assertRaises(OwidError) as raised:
+            FodId.from_base64(base64.b64encode(raw).decode())
+        self.assertIn("ImplementationCapacityExceeded", str(raised.exception))
+        with self.assertRaises(OwidError) as raised:
+            FodId.from_byte_array(raw)
+        self.assertIn("ImplementationCapacityExceeded", str(raised.exception))
+
     # ----- Parsing and verifying are separate -----
 
     def test_tampered_signature_parses_then_verifies_as_invalid(self):

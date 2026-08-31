@@ -79,7 +79,13 @@ class FodIdParseStatus(Enum):
     INVALID_DOMAIN_ENCODING = "InvalidDomainEncoding"
     #: The declared payload byte count disagrees with the bytes present.
     BYTE_COUNT_MISMATCH = "ByteCountMismatch"
-    #: The envelope is consistent but larger than this runtime can hold.
+    #: The envelope is consistent but larger than this runtime can hold, or
+    #: dated past the end of the year 9999 where ``datetime`` stops. The
+    #: four byte minute count of OWID versions 2 and 3 runs to 15 February
+    #: 10186, and the OWID reader judges the count before the arithmetic,
+    #: so a read answers with this status rather than raising. The same
+    #: bytes read fine where the date type is wider, so the status is not a
+    #: fault in the data.
     IMPLEMENTATION_CAPACITY_EXCEEDED = "ImplementationCapacityExceeded"
     #: The version 0 marker, which stands for an absent envelope and never
     #: produces a value.

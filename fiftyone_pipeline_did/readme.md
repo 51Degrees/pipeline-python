@@ -154,7 +154,7 @@ same whichever language parsed the bytes.
 | `UNEXPECTED_END` | The data stopped in the middle of an envelope field |
 | `INVALID_DOMAIN_ENCODING` | The creator domain is not terminated or is longer than the OWID maximum |
 | `BYTE_COUNT_MISMATCH` | The declared payload length disagrees with the bytes present |
-| `IMPLEMENTATION_CAPACITY_EXCEEDED` | The envelope is consistent but larger than this runtime can hold |
+| `IMPLEMENTATION_CAPACITY_EXCEEDED` | The envelope is consistent but larger than this runtime can hold, or dated past the end of the year 9999 where `datetime` stops. The four byte minute count runs to 15 February 10186, and the read answers with this status rather than raising on such a count |
 | `ABSENT_NODE` | The version 0 marker, which stands for an absent envelope |
 | `MALFORMED_ENVELOPE` | Malformed in a way none of the above describes |
 | `PAYLOAD_TOO_SHORT` | The envelope was read but the payload is shorter than the 5 byte header, so the type cannot be read |
