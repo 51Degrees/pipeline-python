@@ -62,10 +62,14 @@ Run `pwsh ./setup.ps1` from the repository root, or
 tests and examples import the fork under its own name, `owid`, which is how
 they build signed envelopes to test against.
 
-The two OWID types the public API refers to are re-exported from the package
+The OWID types the public API refers to are re-exported from the package
 itself, so a caller never has to reach into the private module. Catch
-`fiftyone_pipeline_did.OwidError` for an OWID level failure, and use
-`fiftyone_pipeline_did.Owid` for the envelope that `FodId.from_owid` takes.
+`fiftyone_pipeline_did.OwidError` for an OWID level failure raised by the
+raising readers, use `fiftyone_pipeline_did.Owid` for the envelope that
+`FodId.from_owid` takes, and read `fiftyone_pipeline_did.SignatureStatus`
+from `FodId.signature_status`. An `Owid` only ever comes from a successful
+parse or from an OWID `Creator` that signs one into being, so there is no
+way to hold an unsigned or partly built envelope.
 
 ## Usage
 
@@ -93,6 +97,135 @@ identifier carrying a creator context the License Id field holds an
 encrypted value that only 51Degrees can turn back into a licence
 identifier, so `license_id` is the field's raw value and identifies
 nothing outside 51Degrees.
+
+## Parsing without exceptions
+
+An identifier arriving from outside, in a query string, a header or a
+form field, may be anything at all, and failing to be a 51Did is an
+ordinary outcome rather than a fault. `try_from_base64` and
+`try_from_byte_array` read such input without raising and answer with a
+`FodIdParseResult`, a small immutable tuple carrying three facts:
+
+- `ok`, whether the parse succeeded;
+- `value`, the `FodId` on success and `None` on failure, never a partly
+  read identifier;
+- `status`, a `FodIdParseStatus`, which is `PARSED` on success and the
+  specific reason otherwise.
+
+The result is truthy on success, so `if result:` reads naturally.
+
+```python
+from fiftyone_pipeline_did import FodId, FodIdParseStatus
+
+result = FodId.try_from_base64(text_from_the_request)   # either alphabet
+if result:
+    fod_id = result.value
+else:
+    reason = result.status      # for example FodIdParseStatus.INVALID_BASE64
+```
+
+Parsing and verifying are separate steps. A successful parse says the
+bytes have the shape of a 51Did and nothing about whether the signature
+is genuine, so a parsed identifier is not known to be genuine until
+`fod_id.verify(public_key_pem)`, `fod_id.signature_status(public_key_pem)`
+or a `DidClient` check says so. `signature_status` answers in the OWID
+`SignatureStatus` vocabulary, where only `SIGNATURE_VALID` and
+`SIGNATURE_INVALID` are about the signature. `KEY_UNAVAILABLE`,
+`INVALID_KEY` and `VERIFICATION_ERROR` say the question could not be
+answered, which must never be read as a forgery, and the boolean `verify`
+raises for a key it cannot use rather than answering `False` for the same
+reason.
+
+### Status meanings
+
+The `FodIdParseStatus` vocabulary is the OWID one, member for member and
+value for value, plus two members for the payload rules this package
+applies once the envelope has been read. A failure inside the envelope is
+carried through with the OWID status unchanged, so the reason reads the
+same whichever language parsed the bytes.
+
+| Status | Meaning |
+| --- | --- |
+| `PARSED` | A structurally valid 51Did. The signature has not been checked |
+| `MISSING_INPUT` | `None`, an empty string or an empty buffer |
+| `INVALID_INPUT_TYPE` | Not a string (base64 reader) or not a bytes-like object (byte reader) |
+| `INVALID_BASE64` | The text is not base64 in either alphabet |
+| `UNSUPPORTED_VERSION` | The first byte names an envelope version this package does not know |
+| `UNEXPECTED_END` | The data stopped in the middle of an envelope field |
+| `INVALID_DOMAIN_ENCODING` | The creator domain is not terminated or is longer than the OWID maximum |
+| `BYTE_COUNT_MISMATCH` | The declared payload length disagrees with the bytes present |
+| `IMPLEMENTATION_CAPACITY_EXCEEDED` | The envelope is consistent but larger than this runtime can hold |
+| `ABSENT_NODE` | The version 0 marker, which stands for an absent envelope |
+| `MALFORMED_ENVELOPE` | Malformed in a way none of the above describes |
+| `PAYLOAD_TOO_SHORT` | The envelope was read but the payload is shorter than the 5 byte header, so the type cannot be read |
+| `INVALID_TYPE_PAYLOAD_LENGTH` | The header names a type whose value needs more bytes than the payload holds |
+
+### Lower bounds and no upper bound
+
+The payload must hold the 5 byte header before the type can be read, and
+the type then says how many value bytes must follow, being 16 for
+`RANDOM` and 32 for `PROBABILISTIC` and `HASHED_EMAIL`, as the payload
+layout table above shows. `RESERVED` keeps the best-effort reading, being
+the header fields and whatever bytes follow. Anything beyond the value is
+a creator context section whose lengths belong to the cloud, so a longer
+payload, a longer creator domain (a self-hosted container may sign with
+one) or a longer envelope is accepted and this package places no upper
+bound of its own on any of them. An older reader meeting a context
+section of a version it does not know still reads the header and the
+value.
+
+`DidClient` refuses text longer than 4096 characters before it parses
+it, fetches a key or calls the cloud. That figure is client policy,
+deliberately arbitrary and generous, and it is not a statement of how
+long a 51Did can be. The parser answers such text with an ordinary
+result, whilst the client raises its usual `ValueError`.
+
+### Expected results and exceptions
+
+Every `FodIdParseStatus` other than `PARSED` is an expected data result
+from the `try_` readers and never an exception. The raising readers,
+`from_base64`, `from_byte_array`, `from_owid` and the constructor, read
+through the same logic and keep their documented exceptions for callers
+who prefer them, being `TypeError` for `None` or a wrong input type,
+`ValueError` for `PAYLOAD_TOO_SHORT` and `INVALID_TYPE_PAYLOAD_LENGTH`,
+and `OwidError` for every other status, with the message naming the
+status. Signature verification against a key that cannot be decoded, a
+key list that cannot be fetched, and a cloud answer other than the one
+asked for remain exceptions, because they are faults in the surroundings
+and not properties of the identifier.
+
+### Migrating from the removed OWID API
+
+The OWID library no longer offers a throwing parse or a public
+constructor, so an envelope cannot be assembled by hand, and code that
+used those through this package changes as follows.
+
+```python
+# Before the hardening, external input was read by catching what the
+# reader raised.
+from fiftyone_pipeline_did import FodId, OwidError
+try:
+    fod_id = FodId.from_base64(text)
+except (OwidError, ValueError):
+    fod_id = None
+
+# After the hardening, ask for the result and its reason.
+from fiftyone_pipeline_did import FodId
+result = FodId.try_from_base64(text)
+fod_id = result.value if result else None
+
+# Before the hardening, an envelope was built by hand and signed
+# afterwards, as the tests and the offline example did.
+owid = Owid(domain=domain, payload=payload)
+creator.sign(owid)
+
+# After the hardening, the creator signs a new envelope into being from
+# the payload.
+owid = creator.create(payload)
+```
+
+`from_base64`, `from_byte_array`, `from_owid` and the constructor keep
+working and keep their exception types.
 
 ## Comparing two 51Dids
 
@@ -138,6 +271,9 @@ Every request carries a `User-Agent` naming this package and its version.
 **1. Parse.** The identifier arrives from a page in the URL-safe alphabet
 and from the cloud in the standard one. `from_base64` takes either, with
 or without padding, and `as_base64_url()` gives the form to put in a URL.
+Input that may not be a 51Did at all is better read with
+`try_from_base64`, which names the reason instead of raising (see
+"Parsing without exceptions" above). Neither checks the signature.
 
 ```python
 fod_id = FodId.from_base64(fifty_one_did)
@@ -166,9 +302,11 @@ key = client.public_key_for(fod_id)  # the entry in force, or None
 **3. Verify the signature through the cloud.** The open `verify`
 endpoint, one use against the resource key and no licence key needed. The
 identifier is sent under both the `51did` and `owid` query names, so the
-call works with hosts that read either parameter. A value the cloud cannot
-parse as a 51Did raises
-`DidArgumentError` (a `ValueError`) carrying the cloud's message.
+call works with hosts that read either parameter. A string that does not
+parse as a 51Did raises `DidArgumentError` (a `ValueError`) before any
+request is made, with the message naming the `FodIdParseStatus`, and a
+value the cloud itself refuses raises the same error carrying the cloud's
+message and `status_code` 400.
 
 ```python
 valid = client.verify(fod_id)   # bool
@@ -207,8 +345,10 @@ A context string this package does not know maps to `UNREADABLE`, so an
 unrecognised outcome is never mistaken for a good one, and `context_raw`
 keeps the string as sent. Every cryptographic failure comes back from the
 cloud as the one word `unreadable` by design, a missing licence key
-included, so the client does not try to tell them apart either. A cloud
-that cannot parse the 51Did raises `DidArgumentError` (HTTP 400), a host
+included, so the client does not try to tell them apart either. A string
+that does not parse as a 51Did raises `DidArgumentError` before any
+request is made, a cloud that refuses the 51Did raises the same error
+with HTTP 400, a host
 that does not offer the creator context raises `DidNotSupportedError`
 (HTTP 404), and any other status raises `DidClientError` carrying
 `status_code` and `body`. A transport failure raises the `OSError` the
@@ -347,7 +487,12 @@ is refreshed by common-ci's `update-example-assets` step.
 
 ## Non-goals
 
-- **No signature verification on construction.** Call `verify(public_key_pem)`
-  when needed.
+- **No signature verification on parsing.** A parsed 51Did is not known to
+  be genuine. Call `verify(public_key_pem)`, `signature_status(public_key_pem)`
+  or a `DidClient` check when needed.
+- **No upper bound on the size of an identifier.** The lengths beyond the
+  header and value belong to the cloud. The 4096 character figure in
+  `DidClient` is client policy against obviously malformed text, not a
+  format limit.
 - **No creation of new 51Dids.** This is a parser; new 51Dids are issued by the
   51Degrees cloud / on-premise hashing engines.

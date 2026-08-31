@@ -30,6 +30,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 from owid import Crypto, Owid, Version
+from owid import io as owid_io
 
 from fiftyone_pipeline_did import FodId
 
@@ -67,19 +68,42 @@ def context_payload():
     return probabilistic_payload() + bytes([0]) + bytes(range(1, 24))
 
 
+def envelope_bytes(crypto, payload, date=None, version=Version.VERSION3,
+                   domain=TEST_DOMAIN, signature=None):
+    """The wire bytes of an envelope over the payload, dated as given (to
+    the minute, as the wire format stores it), stamped with the version
+    and signed with the key pair, or carrying the signature given instead.
+
+    The OWID library only hands out an envelope from a parse or from a
+    Creator, and a Creator always writes version 3, its own domain and the
+    current time, so the tests write the fields with the library's own
+    wire helpers and sign the result by hand. The bytes signed are the
+    fields without the signature, which is what the library signs too."""
+    if date is None:
+        date = datetime.now(timezone.utc)
+    buffer = bytearray()
+    owid_io.write_byte(buffer, version.as_byte())
+    owid_io.write_string(buffer, domain)
+    owid_io.write_date(buffer, date.replace(second=0, microsecond=0),
+                       version)
+    owid_io.write_byte_array(buffer, bytes(payload))
+    if signature is None:
+        signature = crypto.sign_byte_array(bytes(buffer))
+    owid_io.write_signature(buffer, signature)
+    return bytes(buffer)
+
+
 def signed_envelope(crypto, payload, date=None, version=Version.VERSION3,
                     domain=TEST_DOMAIN):
     """An OWID over the payload, signed with the key pair, dated as given
-    (to the minute, as the wire format stores it) and stamped with the
-    version. The Creator class always writes version 3 and the current
-    time, so the fields are set and signed by hand here."""
-    if date is None:
-        date = datetime.now(timezone.utc)
-    owid = Owid(version=version, domain=domain,
-                date=date.replace(second=0, microsecond=0),
-                payload=bytes(payload))
-    owid.signature = crypto.sign_byte_array(owid.data_for_crypto([]))
-    return owid
+    and stamped with the version, read back through the library's own
+    parser so the tests hold the same kind of envelope a caller would."""
+    read = Owid.parse_bytes(
+        envelope_bytes(crypto, payload, date, version, domain))
+    if not read.ok:
+        raise AssertionError(
+            "the test envelope did not parse: {0}".format(read.status))
+    return read.owid
 
 
 def signed_fod_id(crypto, payload=None, date=None,

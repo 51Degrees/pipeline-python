@@ -27,8 +27,12 @@ Identifier) value.
 OWID form in either alphabet, exposes the three payload fields (Flags,
 License Id and the value Hash) and the identifier
 :class:`~fiftyone_pipeline_did.id_type.IdType`, and delegates OWID-level
-concerns to the wrapped envelope. Compare 51Dids by their value (``hash``),
-never by their envelopes.
+concerns to the wrapped envelope. ``FodId.try_from_base64`` and
+``FodId.try_from_byte_array`` read external data without raising and answer
+with a :class:`~fiftyone_pipeline_did.fod_id.FodIdParseResult` naming the
+:class:`~fiftyone_pipeline_did.fod_id.FodIdParseStatus` either way. Parsing
+never checks the signature. Compare 51Dids by their value (``hash``), never
+by their envelopes.
 
 :class:`~fiftyone_pipeline_did.did_client.DidClient` handles every
 manipulation of a 51Did a server needs against the 51Degrees cloud: the
@@ -54,15 +58,18 @@ from .did_client import (
 )
 # The OWID library is carried inside this package as the private module
 # _owid, because it cannot be installed from a package registry (see the
-# package readme). The envelope type and the error type are re-exported here
-# so that callers have supported names for the two of them that the public
-# API refers to, as the private module itself is not part of that API.
-from ._owid import Owid, OwidError
-from .fod_id import DATE_EPOCH, FodId
+# package readme). The envelope type, the error type and the signature
+# status vocabulary are re-exported here so that callers have supported
+# names for the OWID types the public API refers to, as the private module
+# itself is not part of that API.
+from ._owid import Owid, OwidError, SignatureStatus
+from .fod_id import DATE_EPOCH, FodId, FodIdParseResult, FodIdParseStatus
 from .id_type import IdType
 
 __all__ = [
     "FodId",
+    "FodIdParseResult",
+    "FodIdParseStatus",
     "IdType",
     "DATE_EPOCH",
     "DidClient",
@@ -79,4 +86,5 @@ __all__ = [
     "DEFAULT_ENDPOINT",
     "Owid",
     "OwidError",
+    "SignatureStatus",
 ]
