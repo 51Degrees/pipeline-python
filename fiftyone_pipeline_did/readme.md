@@ -10,11 +10,13 @@ Identifier) returned by the 51Degrees Cloud service. Mirrors the .NET
 - The **envelope** is the data model that carries it: a signed OWID holding
   the version, domain, date, payload and signature. It changes byte-for-byte
   every time the cloud issues one.
-- The **value** is the stable, comparable part of the payload after the Flags
-  and License Id: a 32-byte SHA-256 for Probabilistic and HashedEmail
-  identifiers, or 16 GUID bytes for Random.
+- The **match key** is the stable, comparable part of the payload after
+  the Flags and License Id, being a 32-byte SHA-256 for Probabilistic and
+  HashedEmail identifiers, or 16 GUID bytes for Random. Two 51Dids for the
+  same inputs share the same match key even though their envelopes differ.
 
-**Comparing two 51Dids means comparing their values, never their envelopes.**
+**Comparing two 51Dids means comparing their match keys, never their
+envelopes.**
 
 ## Payload layout
 
@@ -22,10 +24,10 @@ Identifier) returned by the 51Degrees Cloud service. Mirrors the .NET
 |-------:|-------:|------------|-------------------------------------------------|
 |      0 |      1 | Flags      | uint8: bits 0-2 usage, bits 6-7 identifier type |
 |      1 |      4 | LicenseId  | uint32 (little-endian)                          |
-|      5 |  16/32 | Value      | SHA-256 (Probabilistic, HashedEmail) or GUID (Random) |
+|      5 |  16/32 | Match key  | SHA-256 (Probabilistic, HashedEmail) or GUID (Random) |
 
-| Bits 7-6 | `IdType`        | Value length | Minimum payload |
-|---------:|-----------------|-------------:|----------------:|
+| Bits 7-6 | `IdType`        | Match key length | Minimum payload |
+|---------:|-----------------|-----------------:|----------------:|
 |     `00` | `PROBABILISTIC` |           32 |              37 |
 |     `01` | `RANDOM`        |           16 |              21 |
 |     `10` | `HASHED_EMAIL`  |           32 |              37 |
@@ -81,7 +83,7 @@ fod_id = FodId.from_base64(base64_from_cloud_service)   # either alphabet
 flags = fod_id.flags
 type_ = fod_id.type          # IdType.PROBABILISTIC / RANDOM / HASHED_EMAIL
 license_id = fod_id.license_id
-value = fod_id.hash          # SHA-256 or GUID bytes, see type
+match_key = fod_id.match_key  # SHA-256 or GUID bytes, see type
 
 # Delegated OWID-level fields and operations.
 domain = fod_id.domain
@@ -97,6 +99,10 @@ identifier carrying a creator context the License Id field holds an
 encrypted value that only 51Degrees can turn back into a licence
 identifier, so `license_id` is the field's raw value and identifies
 nothing outside 51Degrees.
+
+`fod_id.hash` remains as a deprecated alias of `match_key`. Reading the
+alias returns the same bytes and warns with `DeprecationWarning`, and the
+alias will be removed in a future release, so move callers to `match_key`.
 
 ## Parsing without exceptions
 
@@ -158,21 +164,21 @@ same whichever language parsed the bytes.
 | `ABSENT_NODE` | The version 0 marker, which stands for an absent envelope |
 | `MALFORMED_ENVELOPE` | Malformed in a way none of the above describes |
 | `PAYLOAD_TOO_SHORT` | The envelope was read but the payload is shorter than the 5 byte header, so the type cannot be read |
-| `INVALID_TYPE_PAYLOAD_LENGTH` | The header names a type whose value needs more bytes than the payload holds |
+| `INVALID_TYPE_PAYLOAD_LENGTH` | The header names a type whose match key needs more bytes than the payload holds |
 
 ### Lower bounds and no upper bound
 
 The payload must hold the 5 byte header before the type can be read, and
-the type then says how many value bytes must follow, being 16 for
+the type then says how many match key bytes must follow, being 16 for
 `RANDOM` and 32 for `PROBABILISTIC` and `HASHED_EMAIL`, as the payload
 layout table above shows. `RESERVED` keeps the best-effort reading, being
-the header fields and whatever bytes follow. Anything beyond the value is
-a creator context section whose lengths belong to the cloud, so a longer
-payload, a longer creator domain (a self-hosted container may sign with
-one) or a longer envelope is accepted and this package places no upper
-bound of its own on any of them. An older reader meeting a context
+the header fields and whatever bytes follow. Anything beyond the match key
+is a creator context section whose lengths belong to the cloud, so a
+longer payload, a longer creator domain (a self-hosted container may sign
+with one) or a longer envelope is accepted and this package places no
+upper bound of its own on any of them. An older reader meeting a context
 section of a version it does not know still reads the header and the
-value.
+match key.
 
 `DidClient` refuses text longer than 4096 characters before it parses
 it, fetches a key or calls the cloud. That figure is client policy,
@@ -234,8 +240,8 @@ a = FodId.from_base64(idprobglobal_a)
 b = FodId.from_base64(idprobglobal_b)
 
 # The envelope (date, signature, base64) differs across reissues.
-# The value inside the payload is stable - this is what you compare:
-same_value = a.hash == b.hash
+# The match key inside the payload is stable, so compare match keys:
+same_match_key = a.match_key == b.match_key
 ```
 
 ## Verifying on your server
@@ -491,7 +497,7 @@ is refreshed by common-ci's `update-example-assets` step.
   be genuine. Call `verify(public_key_pem)`, `signature_status(public_key_pem)`
   or a `DidClient` check when needed.
 - **No upper bound on the size of an identifier.** The lengths beyond the
-  header and value belong to the cloud. The 4096 character figure in
+  header and match key belong to the cloud. The 4096 character figure in
   `DidClient` is client policy against obviously malformed text, not a
   format limit.
 - **No creation of new 51Dids.** This is a parser; new 51Dids are issued by the

@@ -27,7 +27,8 @@ self-contained and offline, it builds a sample 51Did in process - generate an
 ECDSA P-256 key pair, sign a canonical 37-byte payload - then parses it back
 and prints the three payload fields. It also shows the headline use case: a
 51Did is re-issued fresh on every call (the envelope, hence the base64,
-changes), but the value (the Hash) is stable. Compare values, never envelopes.
+changes), but the match key is stable. Compare match keys, never
+envelopes.
 """
 
 from owid import Crypto, Creator
@@ -39,7 +40,7 @@ DOMAIN = "51degrees.com"
 
 def sample_payload():
     """A canonical 37-byte Probabilistic payload: flags 0x00, License Id
-    0x12345678 (little-endian) and a 32-byte value 0x20..0x3F."""
+    0x12345678 (little-endian) and a 32-byte match key 0x20..0x3F."""
     payload = bytearray(FodId.PAYLOAD_LENGTH)
     payload[FodId.FLAGS_OFFSET] = 0x00
     payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET + 4] = \
@@ -70,21 +71,22 @@ def run():
     print("  Type      :", fod_id.type.name)
     print("  Flags     : 0x{:02x}".format(fod_id.flags))
     print("  LicenseId :", fod_id.license_id)
-    print("  Hash      :", fod_id.hash.hex())
+    print("  Match key :", fod_id.match_key.hex())
     print("  Verifies  :", fod_id.verify(crypto.public_key_pem()))
 
     reissued = FodId.from_base64(issue(creator, payload))
     same_envelope = fod_id.as_base64() == reissued.as_base64()
-    same_value = fod_id.hash == reissued.hash
+    same_match_key = fod_id.match_key == reissued.match_key
 
     print()
     print("Same payload, re-issued:")
     print("  Same envelope (base64) :", same_envelope)
-    print("  Same value (Hash)      :", same_value)
+    print("  Same match key         :", same_match_key)
 
-    if same_envelope or not same_value:
+    if same_envelope or not same_match_key:
         raise AssertionError(
-            "Expected a different envelope but the same value across reissues.")
+            "Expected a different envelope but the same match key across "
+            "reissues.")
 
 
 if __name__ == "__main__":
