@@ -25,14 +25,14 @@ Identifier) value.
 
 :class:`~fiftyone_pipeline_did.fod_id.FodId` parses a 51Did from its base64
 OWID form in either alphabet, exposes the three payload fields (Flags,
-License Id and the value Hash) and the identifier
+License Id and the match key) and the identifier
 :class:`~fiftyone_pipeline_did.id_type.IdType`, and delegates OWID-level
 concerns to the wrapped envelope. ``FodId.try_from_base64`` and
 ``FodId.try_from_byte_array`` read external data without raising and answer
 with a :class:`~fiftyone_pipeline_did.fod_id.FodIdParseResult` naming the
 :class:`~fiftyone_pipeline_did.fod_id.FodIdParseStatus` either way. Parsing
-never checks the signature. Compare 51Dids by their value (``hash``), never
-by their envelopes.
+never checks the signature. Compare 51Dids by their match key
+(``match_key``), never by their envelopes.
 
 :class:`~fiftyone_pipeline_did.did_client.DidClient` handles every
 manipulation of a 51Did a server needs against the 51Degrees cloud: the

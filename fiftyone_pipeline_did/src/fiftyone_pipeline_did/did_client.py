@@ -763,9 +763,9 @@ def _payload_length_valid(fod_id: FodId) -> bool:
     identifier. Anything beyond the base is a creator context section,
     whose exact lengths belong to the cloud, so any longer payload is
     accepted here."""
-    value_length = FodId.GUID_LENGTH if fod_id.type is IdType.RANDOM \
+    match_key_length = FodId.GUID_LENGTH if fod_id.type is IdType.RANDOM \
         else FodId.HASH_LENGTH
-    return len(fod_id.payload) >= FodId.HEADER_LENGTH + value_length
+    return len(fod_id.payload) >= FodId.HEADER_LENGTH + match_key_length
 
 
 def _in_force_at(keys: List[PublicKeyEntry],

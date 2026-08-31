@@ -25,6 +25,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 from typing import NamedTuple, Optional, Tuple
+import warnings
 
 from ._owid import (
     Owid,
@@ -91,9 +92,10 @@ class FodIdParseStatus(Enum):
     #: header (flags and licence id), so the identifier type cannot even be
     #: read.
     PAYLOAD_TOO_SHORT = "PayloadTooShort"
-    #: The header was read and names a type whose value needs more bytes
-    #: than the payload holds, being 16 GUID bytes after the header for
-    #: Random and 32 hash bytes for Probabilistic and HashedEmail.
+    #: The header was read and names a type whose match key needs more
+    #: bytes than the payload holds, being a 16 byte GUID match key after
+    #: the header for Random and a 32 byte SHA-256 match key for
+    #: Probabilistic and HashedEmail.
     INVALID_TYPE_PAYLOAD_LENGTH = "InvalidTypePayloadLength"
 
     @classmethod
@@ -141,18 +143,18 @@ class FodId:
     whole. The **envelope** is the signed
     :class:`~fiftyone_pipeline_did.Owid` that carries it (version, domain,
     date, payload, signature), re-issued fresh on every call.
-    The **value** is the stable, comparable part of the payload after the Flags
-    and License Id, exposed as :attr:`hash`. Two 51Dids for the same inputs
-    share the same value even though their envelopes differ. *Compare values,
-    never envelopes.*
+    The **match key** is the stable, comparable part of the payload after
+    the Flags and License Id, exposed as :attr:`match_key`. Two 51Dids for
+    the same inputs share the same match key even though their envelopes
+    differ. *Compare match keys, never envelopes.*
 
     Payload layout. The header (offsets 0-4) is shared by every identifier
     type; bits 6-7 of Flags select the :class:`IdType` and the length of the
-    value that follows (32-byte SHA-256 for Probabilistic and HashedEmail, or
-    16 GUID bytes for Random). A payload longer than the header and value is
-    accepted, because the bytes after the value are a creator context
-    section whose lengths belong to the cloud, so this package places no
-    upper bound on a payload or an envelope.
+    match key that follows (32-byte SHA-256 for Probabilistic and
+    HashedEmail, or 16 GUID bytes for Random). A payload longer than the
+    header and match key is accepted, because the bytes after the match key
+    are a creator context section whose lengths belong to the cloud, so
+    this package places no upper bound on a payload or an envelope.
 
     Reading and verifying are separate steps. :meth:`try_from_base64` and
     :meth:`try_from_byte_array` read external data without raising and
@@ -172,13 +174,13 @@ class FodId:
     LICENSE_ID_OFFSET = 1
     #: Byte length of the License Id field.
     LICENSE_ID_LENGTH = 4
-    #: Byte offset of the value (Hash) field within the payload.
+    #: Byte offset of the match key field within the payload.
     HASH_OFFSET = 5
-    #: Byte length of the SHA-256 value.
+    #: Byte length of the match key field (SHA-256).
     HASH_LENGTH = 32
     #: Byte length of the header (Flags + License Id) common to every type.
     HEADER_LENGTH = HASH_OFFSET
-    #: Byte length of the GUID value carried by Random identifiers.
+    #: Byte length of the GUID match key carried by Random identifiers.
     GUID_LENGTH = 16
     #: Minimum byte length of a Random 51Did payload.
     RANDOM_PAYLOAD_LENGTH = HEADER_LENGTH + GUID_LENGTH
@@ -209,19 +211,19 @@ class FodId:
         self._assign(read.owid, *_unpack_or_raise(read.owid.payload))
 
     def _assign(self, owid: Owid, flags: int, license_id: int,
-                value: bytes) -> None:
+                match_key: bytes) -> None:
         self._owid = owid
         self._flags = flags
         self._license_id = license_id
-        self._hash = value
+        self._match_key = match_key
 
     @classmethod
     def _build(cls, owid: Owid, flags: int, license_id: int,
-               value: bytes) -> "FodId":
+               match_key: bytes) -> "FodId":
         """An identifier over fields :func:`_read_payload` has already
         checked, so the constructor's read is not repeated."""
         fod_id = cls.__new__(cls)
-        fod_id._assign(owid, flags, license_id, value)
+        fod_id._assign(owid, flags, license_id, match_key)
         return fod_id
 
     @classmethod
@@ -231,11 +233,12 @@ class FodId:
         builds the identifier only when both have passed."""
         if not read.ok:
             return _failed(FodIdParseStatus.of(read.status))
-        status, flags, license_id, value = _read_payload(read.owid.payload)
+        status, flags, license_id, match_key = _read_payload(
+            read.owid.payload)
         if status is not FodIdParseStatus.PARSED:
             return _failed(status)
         return FodIdParseResult(
-            True, cls._build(read.owid, flags, license_id, value),
+            True, cls._build(read.owid, flags, license_id, match_key),
             FodIdParseStatus.PARSED)
 
     @classmethod
@@ -379,13 +382,33 @@ class FodId:
         return self._license_id
 
     @property
-    def hash(self) -> bytes:
-        """The value bytes (a 32-byte SHA-256, or 16 GUID bytes for Random).
+    def match_key(self) -> bytes:
+        """The match key from the payload, a 32-byte SHA-256 for
+        Probabilistic and HashedEmail identifiers, or 16 GUID bytes for
+        Random ones.
 
-        This is the stable, comparable part of the envelope - use it as the
-        cache / dedup key.
+        The match key is the stable, comparable part of the envelope. Two
+        51Dids for the same inputs share the same match key even though
+        their envelopes (date, signature) differ on every issue. Use the
+        match key as the cache key and as the key for spotting duplicates.
         """
-        return self._hash
+        return self._match_key
+
+    @property
+    def hash(self) -> bytes:
+        """Deprecated alias for :attr:`match_key`.
+
+        The stable, comparable part of a 51Did is now called the match key,
+        mirroring the Model Terms for Marketing vocabulary. Reading this
+        property warns with :class:`DeprecationWarning` and returns the
+        same bytes as :attr:`match_key`. The alias will be removed in a
+        future release.
+        """
+        warnings.warn(
+            "FodId.hash is renamed to FodId.match_key. This alias will be "
+            "removed in a future release.",
+            DeprecationWarning, stacklevel=2)
+        return self._match_key
 
     @property
     def version(self) -> Version:
@@ -476,20 +499,20 @@ def _read_payload(payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes]:
     """Applies the two 51Did payload rules and unpacks the three fields.
 
     The header must be present before the type can be read, and the type
-    then says how many value bytes must follow. Anything beyond the value is
-    a creator context section whose lengths belong to the cloud, so a longer
-    payload passes. A Reserved type has no known value length and keeps the
-    documented best-effort reading, being the header fields and whatever
-    bytes follow.
+    then says how many match key bytes must follow. Anything beyond the
+    match key is a creator context section whose lengths belong to the
+    cloud, so a longer payload passes. A Reserved type has no known match
+    key length and keeps the documented best-effort reading, being the
+    header fields and whatever bytes follow.
 
     Returns the status and, on success, the flags, the licence id and the
-    value bytes. On failure the three fields are zero and empty.
+    match key bytes. On failure the three fields are zero and empty.
     """
     if payload is None or len(payload) < FodId.HEADER_LENGTH:
         return FodIdParseStatus.PAYLOAD_TOO_SHORT, 0, 0, b""
     flags = payload[FodId.FLAGS_OFFSET]
-    value_length = _value_length(IdType.from_flags(flags), payload)
-    if len(payload) < FodId.HEADER_LENGTH + value_length:
+    match_key_length = _match_key_length(IdType.from_flags(flags), payload)
+    if len(payload) < FodId.HEADER_LENGTH + match_key_length:
         return FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH, 0, 0, b""
     # Little-endian uint32, unsigned (Python ints are unbounded and
     # non-negative here, so the high bit never becomes negative).
@@ -499,23 +522,24 @@ def _read_payload(payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes]:
         byteorder="little",
         signed=False,
     )
-    # bytes is immutable, so slicing yields a value that cannot be used to
-    # change the underlying payload and no defensive copy is required.
-    value = bytes(payload[FodId.HASH_OFFSET:FodId.HASH_OFFSET + value_length])
-    return FodIdParseStatus.PARSED, flags, license_id, value
+    # bytes is immutable, so slicing yields a match key that cannot be used
+    # to change the underlying payload and no defensive copy is required.
+    match_key = bytes(
+        payload[FodId.HASH_OFFSET:FodId.HASH_OFFSET + match_key_length])
+    return FodIdParseStatus.PARSED, flags, license_id, match_key
 
 
 def _unpack_or_raise(payload: bytes) -> Tuple[int, int, bytes]:
     """The payload rules for the raising readers, with the messages they
     have always given."""
-    status, flags, license_id, value = _read_payload(payload)
+    status, flags, license_id, match_key = _read_payload(payload)
     if status is not FodIdParseStatus.PARSED:
         raise ValueError(_payload_message(status, payload))
-    return flags, license_id, value
+    return flags, license_id, match_key
 
 
-def _value_length(id_type: IdType, payload: bytes) -> int:
-    """How many value bytes the type needs after the header."""
+def _match_key_length(id_type: IdType, payload: bytes) -> int:
+    """How many match key bytes the type needs after the header."""
     if id_type is IdType.RANDOM:
         return FodId.GUID_LENGTH
     if id_type is IdType.RESERVED:
@@ -533,5 +557,5 @@ def _payload_message(status: FodIdParseStatus, payload: bytes) -> str:
     return ("51Did payload for the {0} type must be at least {1} bytes; "
             "got {2}.".format(
                 id_type.name,
-                FodId.HEADER_LENGTH + _value_length(id_type, payload),
+                FodId.HEADER_LENGTH + _match_key_length(id_type, payload),
                 length))
