@@ -20,6 +20,7 @@
 # such notice(s) shall fulfill the requirements of that article.
 # *********************************************************************
 
+import base64
 import json
 import os
 import struct
@@ -39,6 +40,8 @@ from fiftyone_pipeline_did import (
     DidNotSupportedError,
     FactorResult,
     FodId,
+    FodIdParseStatus,
+    OwidError,
     RedeemResult,
     SignatureReason,
     SignatureResult,
@@ -51,6 +54,7 @@ from .envelope import (
     FixedClock,
     KeySchedule,
     context_payload,
+    envelope_bytes,
     form_of,
     probabilistic_payload,
     random_payload,
@@ -742,6 +746,97 @@ class OpenerTransportTests(unittest.TestCase):
         client = DidClient(RESOURCE, endpoint=ENDPOINT, transport=opener)
         self.assertFalse(client.verify("AwB-_x"))
         self.assertEqual(1, len(opener.calls))
+
+
+class MalformedIdentifierTests(unittest.TestCase):
+    """A malformed identifier is refused by the offline surfaces before
+    any key is fetched, and the parser's answer is separate from the
+    client's guard on obviously oversized text."""
+
+    def setUp(self):
+        self.schedule = KeySchedule()
+        self.transport = FakeTransport({"id/key/": (200, self.schedule.json())})
+        self.client = DidClient(RESOURCE, LICENCE, ENDPOINT,
+                                transport=self.transport)
+        self.date = self.schedule.start(1) + timedelta(days=2)
+        self.crypto = self.schedule.crypto(1)
+
+    def malformed(self):
+        """Text the parser refuses, one case per kind of refusal: not
+        base64, an absent envelope marker, a truncated envelope, and an
+        envelope whose payload is too short for its type."""
+        raw = signed_fod_id(self.crypto, date=self.date).as_byte_array()
+        short = envelope_bytes(
+            self.crypto, random_payload()[:-1], date=self.date)
+        return (
+            "not-a-51did!!",
+            "AA",
+            FodId.to_base64_url(base64.b64encode(raw[:6]).decode()),
+            FodId.to_base64_url(base64.b64encode(short).decode()),
+        )
+
+    def test_offline_surfaces_refuse_malformed_text_before_any_key_fetch(
+            self):
+        for text in self.malformed():
+            for call in (self.client.verify_signature,
+                         self.client.verify_signature_detailed,
+                         self.client.public_key_for):
+                with self.assertRaises((OwidError, ValueError), msg=text):
+                    call(text)
+        self.assertEqual(0, len(self.transport.requests))
+
+    def test_parser_names_the_reason_before_the_client_is_asked(self):
+        expected = (FodIdParseStatus.INVALID_BASE64,
+                    FodIdParseStatus.ABSENT_NODE,
+                    FodIdParseStatus.UNEXPECTED_END,
+                    FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH)
+        for text, status in zip(self.malformed(), expected):
+            result = FodId.try_from_base64(text)
+            self.assertFalse(result.ok, text)
+            self.assertIsNone(result.value)
+            self.assertIs(status, result.status)
+        self.assertEqual(0, len(self.transport.requests))
+
+    def test_tampered_signature_parses_then_verifies_as_signature(self):
+        raw = bytearray(
+            signed_fod_id(self.crypto, date=self.date).as_byte_array())
+        raw[-1] ^= 0xFF
+        result = FodId.try_from_byte_array(bytes(raw))
+        self.assertTrue(result.ok)
+        check = self.client.verify_signature_detailed(result.value)
+        self.assertFalse(check.valid)
+        self.assertEqual(SignatureReason.SIGNATURE, check.reason)
+
+    def test_no_key_for_the_date_is_not_reported_as_a_bad_signature(self):
+        before = self.schedule.start(0) - timedelta(days=30)
+        check = self.client.verify_signature_detailed(
+            signed_fod_id(self.crypto, date=before))
+        self.assertFalse(check.valid)
+        self.assertEqual(SignatureReason.NO_KEY, check.reason)
+        self.assertNotEqual(SignatureReason.SIGNATURE, check.reason)
+
+    def test_key_fetch_failure_is_an_error_not_a_verdict(self):
+        self.transport.answers["id/key/"] = urllib.error.URLError(
+            "no route to host")
+        with self.assertRaises(OSError):
+            self.client.verify_signature(
+                signed_fod_id(self.crypto, date=self.date))
+        self.transport.answers["id/key/"] = (500, "boom")
+        with self.assertRaises(DidClientError):
+            self.client.verify_signature_detailed(
+                signed_fod_id(self.crypto, date=self.date))
+
+    def test_oversized_text_is_the_client_guard_not_a_parse_status(self):
+        # The parser has no size limit of its own and answers the oversized
+        # text with an ordinary result, whilst the client refuses the same
+        # text as an argument failure before parsing it or fetching a key.
+        text = "A" * 5000
+        result = FodId.try_from_base64(text)
+        self.assertFalse(result.ok)
+        self.assertIsInstance(result.status, FodIdParseStatus)
+        with self.assertRaises(ValueError):
+            self.client.verify_signature(text)
+        self.assertEqual(0, len(self.transport.requests))
 
 
 if __name__ == "__main__":

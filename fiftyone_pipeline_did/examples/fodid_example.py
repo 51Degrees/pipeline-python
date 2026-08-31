@@ -30,7 +30,7 @@ and prints the three payload fields. It also shows the headline use case: a
 changes), but the value (the Hash) is stable. Compare values, never envelopes.
 """
 
-from owid import Crypto, Creator, Owid
+from owid import Crypto, Creator
 
 from fiftyone_pipeline_did import FodId
 
@@ -50,10 +50,12 @@ def sample_payload():
 
 
 def issue(creator, payload):
-    """Issues (signs) a 51Did over the payload and returns it as base64."""
-    owid = Owid(domain=DOMAIN, payload=payload)
-    creator.sign(owid)
-    return owid.as_base64()
+    """Issues (signs) a 51Did over the payload and returns it as base64.
+
+    The creator is the only way a new envelope comes into being, because an
+    OWID is worth nothing unsigned, so the payload goes in and a signed
+    envelope comes out with no unsigned step in between."""
+    return creator.create(payload).as_base64()
 
 
 def run():
