@@ -696,7 +696,10 @@ def _urlopen(open_call: Callable[[], Any]) -> Tuple[int, bytes]:
 
 def _as_fod_id(value: Union[FodId, str]) -> FodId:
     """The identifier as a FodId, parsing a base64 string where one was
-    given."""
+    given. The parse happens here, before any key is fetched, so text that
+    is not a 51Did raises what :meth:`FodId.from_base64` raises and never
+    reaches the cloud. A caller who would rather have the reason than an
+    exception parses with :meth:`FodId.try_from_base64` first."""
     if isinstance(value, FodId):
         return value
     if isinstance(value, str):
