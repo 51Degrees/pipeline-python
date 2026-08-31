@@ -177,10 +177,13 @@ class DidClientError(Exception):
 
 
 class DidArgumentError(DidClientError, ValueError):
-    """The cloud refused the request because the 51Did sent was not a valid
-    identifier (HTTP 400 with an ``errors`` list). The message carries the
-    cloud's own text. Also a :class:`ValueError`, the language's argument
-    error."""
+    """The 51Did given to a cloud call was not a valid identifier. Raised by
+    the client itself, before any transport, when the text does not parse
+    as a 51Did, with the message naming the
+    :class:`~fiftyone_pipeline_did.FodIdParseStatus` and no status code,
+    and raised for a cloud answer of HTTP 400 with an ``errors`` list, with
+    the cloud's own text and the status code. Also a :class:`ValueError`,
+    the language's argument error."""
 
 
 class DidNotSupportedError(DidClientError):
@@ -482,11 +485,12 @@ class DidClient:
         endpoint, the open endpoint that needs no licence key. One use
         against the resource key.
 
-        Raises :class:`DidArgumentError` (also a :class:`ValueError`) when
-        the cloud could not parse the value as a 51Did, with the cloud's
-        message, and :class:`DidClientError` on any answer other than
-        valid or invalid. Text far longer than any identifier raises
-        :class:`ValueError` before transport. A transport failure raises
+        Raises :class:`DidArgumentError` (also a :class:`ValueError`)
+        before transport when a string does not parse as a 51Did, with the
+        message naming the parse status, or when the cloud refused the
+        value, with the cloud's message, and :class:`DidClientError` on any
+        answer other than valid or invalid. Text far longer than any
+        identifier raises :class:`ValueError` before transport. A transport failure raises
         the :class:`OSError` the transport raised
         (:class:`urllib.error.URLError` by default)."""
         text = _identifier_text(fod_id)
@@ -537,8 +541,10 @@ class DidClient:
             returned it to the page.
         :param challenge: the single-use challenge given to the verify
             endpoint, where one was.
-        :raises DidArgumentError: when the cloud could not parse the value
-            as a 51Did (HTTP 400), with the cloud's message.
+        :raises DidArgumentError: before transport when a string does not
+            parse as a 51Did, with the message naming the parse status, or
+            when the cloud refused the value (HTTP 400), with the cloud's
+            message.
         :raises ValueError: before transport when the text is far longer
             than any identifier.
         :raises DidNotSupportedError: when the host does not offer the
@@ -711,13 +717,27 @@ def _as_fod_id(value: Union[FodId, str]) -> FodId:
 def _identifier_text(value: Union[FodId, str]) -> str:
     """The text sent to the cloud for an identifier. A parsed identifier
     goes in the URL-safe alphabet, which needs no further encoding, and a
-    string goes as given so the cloud can report its own parse error."""
+    string goes as given, in whichever alphabet and padding it arrived,
+    once the client has checked that the string parses as a 51Did, so a
+    value that is not one never reaches the cloud."""
     if isinstance(value, FodId):
         return value.as_base64_url()
     if isinstance(value, str) and value != "":
         _ensure_encoded_size(value)
+        _ensure_parses(value)
         return value
     raise TypeError("fod_id must be a FodId or a non-empty base64 string")
+
+
+def _ensure_parses(value: str) -> None:
+    """Refuses text that is not a 51Did before any transport, naming the
+    parse status in the client's argument error. The signature is not
+    checked here, as the cloud call is what checks it."""
+    result = FodId.try_from_base64(value)
+    if not result.ok:
+        raise DidArgumentError(
+            "The identifier is not a 51Did: {0}.".format(
+                result.status.value))
 
 
 def _ensure_encoded_size(value: str) -> None:

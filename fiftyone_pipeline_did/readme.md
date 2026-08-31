@@ -302,9 +302,11 @@ key = client.public_key_for(fod_id)  # the entry in force, or None
 **3. Verify the signature through the cloud.** The open `verify`
 endpoint, one use against the resource key and no licence key needed. The
 identifier is sent under both the `51did` and `owid` query names, so the
-call works with hosts that read either parameter. A value the cloud cannot
-parse as a 51Did raises
-`DidArgumentError` (a `ValueError`) carrying the cloud's message.
+call works with hosts that read either parameter. A string that does not
+parse as a 51Did raises `DidArgumentError` (a `ValueError`) before any
+request is made, with the message naming the `FodIdParseStatus`, and a
+value the cloud itself refuses raises the same error carrying the cloud's
+message and `status_code` 400.
 
 ```python
 valid = client.verify(fod_id)   # bool
@@ -343,8 +345,10 @@ A context string this package does not know maps to `UNREADABLE`, so an
 unrecognised outcome is never mistaken for a good one, and `context_raw`
 keeps the string as sent. Every cryptographic failure comes back from the
 cloud as the one word `unreadable` by design, a missing licence key
-included, so the client does not try to tell them apart either. A cloud
-that cannot parse the 51Did raises `DidArgumentError` (HTTP 400), a host
+included, so the client does not try to tell them apart either. A string
+that does not parse as a 51Did raises `DidArgumentError` before any
+request is made, a cloud that refuses the 51Did raises the same error
+with HTTP 400, a host
 that does not offer the creator context raises `DidNotSupportedError`
 (HTTP 404), and any other status raises `DidClientError` carrying
 `status_code` and `body`. A transport failure raises the `OSError` the

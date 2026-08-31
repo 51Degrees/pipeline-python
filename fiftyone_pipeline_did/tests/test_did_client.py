@@ -473,22 +473,34 @@ class CloudVerifyTests(unittest.TestCase):
         self.transport.answers["id/verify/"] = (400, '{"valid":false}')
         self.assertFalse(self.client.verify(self.fod_id))
 
-    def test_400_errors_raises_the_argument_error_with_the_message(self):
+    def test_400_errors_from_the_cloud_raises_the_argument_error(self):
+        # A string that parses here can still be refused by the cloud, for
+        # example one from a creator the cloud does not know, and the
+        # cloud's own message is what the error then carries.
         self.transport.answers["id/verify/"] = (
-            400, '{"errors":["Value for 51did is not a valid '
-                 'Base64-encoded 51Did: \'zzz\'."]}')
+            400, '{"errors":["Value for 51did is not a 51Did this service '
+                 'issued."]}')
         with self.assertRaises(DidArgumentError) as raised:
-            self.client.verify("zzz")
+            self.client.verify(self.fod_id.as_base64_url())
         self.assertIsInstance(raised.exception, ValueError)
-        self.assertIn("not a valid Base64-encoded 51Did",
+        self.assertIn("not a 51Did this service issued",
                       str(raised.exception))
         self.assertEqual(400, raised.exception.status_code)
 
     def test_string_form_is_sent_as_given_and_encoded(self):
+        # A payload of 0xFB bytes encodes to "+/v7" whatever the alignment,
+        # so the standard form carries both characters that need encoding.
+        payload = bytearray(probabilistic_payload())
+        for i in range(FodId.HASH_LENGTH):
+            payload[FodId.HASH_OFFSET + i] = 0xFB
+        standard = signed_fod_id(Crypto.new(), bytes(payload)).as_base64()
+        self.assertIn("+", standard)
+        self.assertIn("/", standard)
         self.transport.answers["id/verify/"] = (200, '{"valid":true}')
-        self.client.verify("AwB+/x==")
-        self.assertIn("51did=AwB%2B%2Fx%3D%3D", self.transport.last().full_url)
-        self.assertIn("owid=AwB%2B%2Fx%3D%3D", self.transport.last().full_url)
+        self.client.verify(standard)
+        encoded = urllib.parse.quote(standard, safe="")
+        self.assertIn("51did=" + encoded, self.transport.last().full_url)
+        self.assertIn("owid=" + encoded, self.transport.last().full_url)
 
     def test_padded_and_unpadded_forms_are_both_accepted(self):
         fod_id = signed_fod_id(Crypto.new(), payload=context_payload())
@@ -685,10 +697,14 @@ class RedeemTests(unittest.TestCase):
             self.client.redeem(self.fod_id, "sealed-result", "abc123")
 
     def test_string_identifier_is_sent_as_given(self):
+        # The padded standard form goes as given rather than being
+        # converted to the URL-safe form a parsed identifier is sent in.
+        text = self.fod_id.as_base64()
+        self.assertTrue(text.endswith("="))
         self.transport.answers["id/redeem"] = (200, '{"context":"unreadable"}')
-        self.client.redeem("AwB-_x", "sealed-result", None)
+        self.client.redeem(text, "sealed-result", None)
         form = form_of(self.transport.last())
-        self.assertEqual("AwB-_x", form["51did"])
+        self.assertEqual(text, form["51did"])
         self.assertEqual("", form["challenge"])
 
     def test_redeem_refuses_far_too_long_text_before_the_form(self):
@@ -744,7 +760,8 @@ class OpenerTransportTests(unittest.TestCase):
 
         opener = Opener()
         client = DidClient(RESOURCE, endpoint=ENDPOINT, transport=opener)
-        self.assertFalse(client.verify("AwB-_x"))
+        self.assertFalse(client.verify(
+            signed_fod_id(Crypto.new()).as_base64_url()))
         self.assertEqual(1, len(opener.calls))
 
 
@@ -795,6 +812,29 @@ class MalformedIdentifierTests(unittest.TestCase):
             self.assertFalse(result.ok, text)
             self.assertIsNone(result.value)
             self.assertIs(status, result.status)
+        self.assertEqual(0, len(self.transport.requests))
+
+    def test_cloud_surfaces_refuse_malformed_text_before_any_transport(
+            self):
+        for text in self.malformed():
+            with self.assertRaises(DidArgumentError, msg=text) as raised:
+                self.client.verify(text)
+            self.assertIsInstance(raised.exception, ValueError)
+            # Refused here, so there is no cloud status to carry.
+            self.assertIsNone(raised.exception.status_code)
+            with self.assertRaises(DidArgumentError, msg=text):
+                self.client.redeem(text, "sealed-result", "abc")
+        self.assertEqual(0, len(self.transport.requests))
+
+    def test_cloud_surface_refusal_names_the_parse_status(self):
+        expected = (FodIdParseStatus.INVALID_BASE64,
+                    FodIdParseStatus.ABSENT_NODE,
+                    FodIdParseStatus.UNEXPECTED_END,
+                    FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH)
+        for text, status in zip(self.malformed(), expected):
+            with self.assertRaises(DidArgumentError) as raised:
+                self.client.redeem(text, "sealed-result", "abc")
+            self.assertIn(status.value, str(raised.exception))
         self.assertEqual(0, len(self.transport.requests))
 
     def test_tampered_signature_parses_then_verifies_as_signature(self):
