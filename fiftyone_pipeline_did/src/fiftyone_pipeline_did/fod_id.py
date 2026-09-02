@@ -181,17 +181,29 @@ class FodId:
     #: Byte length of the License Id field.
     LICENSE_ID_LENGTH = 4
     #: Byte offset of the match key field within the payload.
-    HASH_OFFSET = 5
+    MATCH_KEY_OFFSET = 5
     #: Byte length of the match key field (SHA-256).
-    HASH_LENGTH = 32
+    MATCH_KEY_LENGTH = 32
     #: Byte length of the header (Flags + License Id) common to every type.
-    HEADER_LENGTH = HASH_OFFSET
+    HEADER_LENGTH = MATCH_KEY_OFFSET
     #: Byte length of the GUID match key carried by Random identifiers.
     GUID_LENGTH = 16
     #: Minimum byte length of a Random 51Did payload.
     RANDOM_PAYLOAD_LENGTH = HEADER_LENGTH + GUID_LENGTH
     #: Minimum byte length of a Probabilistic or HashedEmail 51Did payload.
-    PAYLOAD_LENGTH = HASH_OFFSET + HASH_LENGTH
+    PAYLOAD_LENGTH = MATCH_KEY_OFFSET + MATCH_KEY_LENGTH
+    #: Deprecated alias for :attr:`MATCH_KEY_OFFSET`. The stable,
+    #: comparable part of a 51Did is now called the match key, mirroring
+    #: the Model Terms for Marketing vocabulary. A class constant cannot
+    #: warn when it is read, so this alias holds the same value and will
+    #: be removed in a future release.
+    HASH_OFFSET = MATCH_KEY_OFFSET
+    #: Deprecated alias for :attr:`MATCH_KEY_LENGTH`. The stable,
+    #: comparable part of a 51Did is now called the match key, mirroring
+    #: the Model Terms for Marketing vocabulary. A class constant cannot
+    #: warn when it is read, so this alias holds the same value and will
+    #: be removed in a future release.
+    HASH_LENGTH = MATCH_KEY_LENGTH
 
     def __init__(self, owid: Owid) -> None:
         """Promotes an already-parsed :class:`~fiftyone_pipeline_did.Owid`
@@ -531,7 +543,8 @@ def _read_payload(payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes]:
     # bytes is immutable, so slicing yields a match key that cannot be used
     # to change the underlying payload and no defensive copy is required.
     match_key = bytes(
-        payload[FodId.HASH_OFFSET:FodId.HASH_OFFSET + match_key_length])
+        payload[FodId.MATCH_KEY_OFFSET:
+                FodId.MATCH_KEY_OFFSET + match_key_length])
     return FodIdParseStatus.PARSED, flags, license_id, match_key
 
 
@@ -550,7 +563,7 @@ def _match_key_length(id_type: IdType, payload: bytes) -> int:
         return FodId.GUID_LENGTH
     if id_type is IdType.RESERVED:
         return len(payload) - FodId.HEADER_LENGTH
-    return FodId.HASH_LENGTH
+    return FodId.MATCH_KEY_LENGTH
 
 
 def _payload_message(status: FodIdParseStatus, payload: bytes) -> str:

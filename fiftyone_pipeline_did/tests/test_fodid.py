@@ -42,7 +42,7 @@ TEST_DOMAIN = "51degrees.com"
 # 0xA5: usage bits plus the HashedEmail type tag in bits 6-7.
 CANONICAL_FLAGS = 0xA5
 CANONICAL_LICENSE_ID = 0x12345678
-CANONICAL_MATCH_KEY = bytes((0x20 + i) for i in range(FodId.HASH_LENGTH))
+CANONICAL_MATCH_KEY = bytes((0x20 + i) for i in range(FodId.MATCH_KEY_LENGTH))
 
 #: A creator domain longer than the one the cloud signs with, as a
 #: self-hosted container may be configured to use.
@@ -61,7 +61,8 @@ def canonical_payload():
     payload = bytearray(FodId.PAYLOAD_LENGTH)
     payload[FodId.FLAGS_OFFSET] = CANONICAL_FLAGS
     _write_license_id(payload)
-    payload[FodId.HASH_OFFSET:FodId.HASH_OFFSET + FodId.HASH_LENGTH] = \
+    payload[FodId.MATCH_KEY_OFFSET:
+            FodId.MATCH_KEY_OFFSET + FodId.MATCH_KEY_LENGTH] = \
         CANONICAL_MATCH_KEY
     return bytearray(payload)
 
@@ -71,7 +72,7 @@ def canonical_random_payload():
     payload[FodId.FLAGS_OFFSET] = (1 << 6) | 0b001  # Random tag + usage bits
     _write_license_id(payload)
     for i in range(FodId.GUID_LENGTH):
-        payload[FodId.HASH_OFFSET + i] = 0x40 + i
+        payload[FodId.MATCH_KEY_OFFSET + i] = 0x40 + i
     return bytearray(payload)
 
 
@@ -104,12 +105,19 @@ class FodIdTests(unittest.TestCase):
     # ----- Current .NET coverage -----
 
     def test_constants_are_internally_consistent(self):
-        self.assertEqual(FodId.HASH_OFFSET + FodId.HASH_LENGTH,
+        self.assertEqual(FodId.MATCH_KEY_OFFSET + FodId.MATCH_KEY_LENGTH,
                          FodId.PAYLOAD_LENGTH)
         self.assertEqual(FodId.LICENSE_ID_OFFSET + FodId.LICENSE_ID_LENGTH,
-                         FodId.HASH_OFFSET)
-        self.assertEqual(FodId.HASH_OFFSET + FodId.GUID_LENGTH,
+                         FodId.MATCH_KEY_OFFSET)
+        self.assertEqual(FodId.MATCH_KEY_OFFSET + FodId.GUID_LENGTH,
                          FodId.RANDOM_PAYLOAD_LENGTH)
+
+    def test_deprecated_constant_aliases_hold_the_new_values(self):
+        # The offset and length of the match key field are now named after
+        # the match key. The old names stay for a release as aliases
+        # holding the same values.
+        self.assertEqual(FodId.MATCH_KEY_OFFSET, FodId.HASH_OFFSET)
+        self.assertEqual(FodId.MATCH_KEY_LENGTH, FodId.HASH_LENGTH)
 
     def test_exposes_owid_level_fields(self):
         fod = FodId.from_base64(
@@ -235,7 +243,7 @@ class FodIdTests(unittest.TestCase):
         self.assertEqual(CANONICAL_FLAGS, fod.flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
-        self.assertEqual(FodId.HASH_LENGTH, len(fod.match_key))
+        self.assertEqual(FodId.MATCH_KEY_LENGTH, len(fod.match_key))
 
     def test_long_envelope_parses_and_keeps_the_header_fields(self):
         # No upper bound belongs in the reader: a creator domain is a
@@ -250,7 +258,7 @@ class FodIdTests(unittest.TestCase):
         self.assertEqual(CANONICAL_FLAGS, fod.flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
-        self.assertEqual(FodId.HASH_LENGTH, len(fod.match_key))
+        self.assertEqual(FodId.MATCH_KEY_LENGTH, len(fod.match_key))
 
     def test_is_cryptographically_verifiable(self):
         fod = FodId.from_base64(
@@ -316,7 +324,7 @@ class FodIdTests(unittest.TestCase):
             FodId.from_base64(base64)
 
     def test_reserved_header_only_parses(self):
-        payload = bytearray(FodId.HASH_OFFSET)
+        payload = bytearray(FodId.MATCH_KEY_OFFSET)
         payload[FodId.FLAGS_OFFSET] = 0b1100_0000
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(IdType.RESERVED, fod.type)
@@ -367,7 +375,7 @@ class FodIdTests(unittest.TestCase):
         with self.assertRaises(AttributeError):
             owid.signature = bytes(64)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
-        self.assertEqual(0x20, fod.payload[FodId.HASH_OFFSET])
+        self.assertEqual(0x20, fod.payload[FodId.MATCH_KEY_OFFSET])
 
     def test_constructor_reads_the_envelope_back_through_the_parser(self):
         # The envelope handed in is written out and read back, so the FodId
@@ -487,7 +495,7 @@ class FodIdTryParseTests(unittest.TestCase):
         fod = self.assert_parsed(FodId.try_from_base64(
             self.factory.signed_owid_base64(payload)))
         self.assert_canonical(fod)
-        self.assertEqual(FodId.HASH_LENGTH, len(fod.match_key))
+        self.assertEqual(FodId.MATCH_KEY_LENGTH, len(fod.match_key))
         self.assertEqual(payload, fod.payload)
 
     def test_far_longer_payload_is_not_rejected_for_its_length(self):

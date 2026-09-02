@@ -104,6 +104,13 @@ nothing outside 51Degrees.
 alias returns the same bytes and warns with `DeprecationWarning`, and the
 alias will be removed in a future release, so move callers to `match_key`.
 
+The class constants naming the match key field follow the same
+vocabulary, being `FodId.MATCH_KEY_OFFSET` and `FodId.MATCH_KEY_LENGTH`.
+`FodId.HASH_OFFSET` and `FodId.HASH_LENGTH` remain as deprecated aliases
+holding the same values, and a class constant cannot warn when it is
+read, so move callers to the new names before the aliases are removed in
+a future release.
+
 ## Parsing without exceptions
 
 An identifier arriving from outside, in a query string, a header or a

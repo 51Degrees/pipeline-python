@@ -77,8 +77,8 @@ class FodIdBase64Tests(unittest.TestCase):
         # encoded: every three bytes of 0xFB encode to "+/v7" whatever
         # the alignment, and a 32 byte run holds several whole triples.
         payload = bytearray(probabilistic_payload())
-        for i in range(FodId.HASH_LENGTH):
-            payload[FodId.HASH_OFFSET + i] = 0xFB
+        for i in range(FodId.MATCH_KEY_LENGTH):
+            payload[FodId.MATCH_KEY_OFFSET + i] = 0xFB
         self.fod_id = signed_fod_id(self.crypto, bytes(payload))
         self.standard = self.fod_id.as_base64()
         self.assertTrue("+" in self.standard or "/" in self.standard,
@@ -491,8 +491,8 @@ class CloudVerifyTests(unittest.TestCase):
         # A payload of 0xFB bytes encodes to "+/v7" whatever the alignment,
         # so the standard form carries both characters that need encoding.
         payload = bytearray(probabilistic_payload())
-        for i in range(FodId.HASH_LENGTH):
-            payload[FodId.HASH_OFFSET + i] = 0xFB
+        for i in range(FodId.MATCH_KEY_LENGTH):
+            payload[FodId.MATCH_KEY_OFFSET + i] = 0xFB
         standard = signed_fod_id(Crypto.new(), bytes(payload)).as_base64()
         self.assertIn("+", standard)
         self.assertIn("/", standard)

@@ -45,8 +45,8 @@ def sample_payload():
     payload[FodId.FLAGS_OFFSET] = 0x00
     payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET + 4] = \
         bytes([0x78, 0x56, 0x34, 0x12])
-    for i in range(FodId.HASH_LENGTH):
-        payload[FodId.HASH_OFFSET + i] = 0x20 + i
+    for i in range(FodId.MATCH_KEY_LENGTH):
+        payload[FodId.MATCH_KEY_OFFSET + i] = 0x20 + i
     return bytes(payload)
 
 

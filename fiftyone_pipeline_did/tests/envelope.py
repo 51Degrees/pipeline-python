@@ -47,8 +47,8 @@ def probabilistic_payload():
     payload[FodId.FLAGS_OFFSET] = 0b0000_0101
     payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET + 4] = \
         bytes([0x78, 0x56, 0x34, 0x12])
-    for i in range(FodId.HASH_LENGTH):
-        payload[FodId.HASH_OFFSET + i] = 0x20 + i
+    for i in range(FodId.MATCH_KEY_LENGTH):
+        payload[FodId.MATCH_KEY_OFFSET + i] = 0x20 + i
     return bytes(payload)
 
 
@@ -57,7 +57,7 @@ def random_payload():
     payload = bytearray(FodId.RANDOM_PAYLOAD_LENGTH)
     payload[FodId.FLAGS_OFFSET] = (1 << 6) | 0b001
     for i in range(FodId.GUID_LENGTH):
-        payload[FodId.HASH_OFFSET + i] = 0x40 + i
+        payload[FodId.MATCH_KEY_OFFSET + i] = 0x40 + i
     return bytes(payload)
 
 
