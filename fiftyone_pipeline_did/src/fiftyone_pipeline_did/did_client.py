@@ -764,7 +764,7 @@ def _payload_length_valid(fod_id: FodId) -> bool:
     whose exact lengths belong to the cloud, so any longer payload is
     accepted here."""
     match_key_length = FodId.GUID_LENGTH if fod_id.type is IdType.RANDOM \
-        else FodId.HASH_LENGTH
+        else FodId.MATCH_KEY_LENGTH
     return len(fod_id.payload) >= FodId.HEADER_LENGTH + match_key_length
 
 
