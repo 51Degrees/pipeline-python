@@ -112,8 +112,22 @@ class ContextResult(str, Enum):
     MISMATCH = "mismatch"
     #: The identifier carries no creator context.
     NO_CONTEXT = "nocontext"
-    #: The service holds no secret covering the identifier's date.
+    #: No longer sent by the service, and kept only because it has been
+    #: public since this enumeration was added. What used to give this
+    #: answer now gives :attr:`MISCONFIGURED` where the service is at fault,
+    #: or :attr:`INVALID_DATE` where the identifier could not have been
+    #: created.
     NOT_CHECKABLE = "notcheckable"
+    #: The service that checked the identifier could not complete the check,
+    #: and the reason is that service rather than the identifier. It either
+    #: compared nothing, or compared some factors and reports at least one
+    #: as :attr:`FactorResult.MISCONFIGURED`. Nothing a caller sends can
+    #: produce it, so it is a signal about the deployment.
+    MISCONFIGURED = "misconfigured"
+    #: The creation date is one the scheme could not have produced, being in
+    #: the future or before the creator context scheme began, so the
+    #: identifier is fabricated rather than the service being wrong.
+    INVALID_DATE = "invaliddate"
     #: The sealed result was redeemed outside the freshness window.
     EXPIRED = "expired"
     #: The sealed result had already been redeemed on that instance.
@@ -138,12 +152,17 @@ class SignatureResult(str, Enum):
 
 
 class FactorResult(str, Enum):
-    """The outcome of one factor in a mismatch. The cloud reports ``null``
-    for a factor that was not compared, which is passed through as
-    ``None``."""
+    """The outcome of one factor in a mismatch or a partly misconfigured
+    result. The cloud reports ``null`` for a factor that was not compared,
+    which is passed through as ``None``."""
 
     VERIFIED = "verified"
     MISMATCH = "mismatch"
+    #: The service that checked the identifier is not configured to
+    #: determine this factor, so it could not have checked it for any
+    #: request. This is NOT a mismatch and must not be read as one, since
+    #: the identifier says nothing about it either way.
+    MISCONFIGURED = "misconfigured"
 
 
 class SignatureReason(str, Enum):
@@ -362,6 +381,11 @@ def _factor_of(value: Any) -> FactorValue:
         return FactorResult.VERIFIED
     if value == "mismatch":
         return FactorResult.MISMATCH
+    # Read on its own rather than left to fall through, because it says the
+    # checking service could not determine the factor and must never be
+    # taken for a mismatch.
+    if value == "misconfigured":
+        return FactorResult.MISCONFIGURED
     return None
 
 
