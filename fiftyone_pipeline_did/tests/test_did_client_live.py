@@ -30,6 +30,7 @@ optional licence key is read from ``license_key`` or
 everywhere else. Every test here costs uses against the resource key.
 """
 
+import asyncio
 import json
 import os
 import unittest
@@ -48,6 +49,13 @@ RESOURCE_KEY = os.environ.get("resource_key") \
     or os.environ.get("_51DEGREES_RESOURCE_KEY")
 LICENCE_KEY = os.environ.get("license_key") \
     or os.environ.get("_51DEGREES_LICENSE_KEY")
+
+
+def run(coroutine):
+    """Runs one client call to completion on a fresh event loop, as the
+    client's cloud-facing methods are coroutines and these are plain
+    unittest tests."""
+    return asyncio.run(coroutine)
 
 
 @unittest.skipUnless(
@@ -79,17 +87,17 @@ class DidClientLiveTests(unittest.TestCase):
 
     def test_created_identifier_verifies_offline_and_through_the_cloud(self):
         fod_id = self.create()
-        self.assertIsNotNone(self.client.public_key_for(fod_id))
-        self.assertTrue(self.client.verify_signature(fod_id))
-        self.assertTrue(self.client.verify(fod_id))
+        self.assertIsNotNone(run(self.client.public_key_for(fod_id)))
+        self.assertTrue(run(self.client.verify_signature(fod_id)))
+        self.assertTrue(run(self.client.verify(fod_id)))
         # The URL-safe form a page would send round-trips through the
         # cloud as well.
-        self.assertTrue(self.client.verify(fod_id.as_base64_url()))
+        self.assertTrue(run(self.client.verify(fod_id.as_base64_url())))
 
     def test_garbage_result_redeems_as_unreadable(self):
         fod_id = self.create()
         try:
-            result = self.client.redeem(fod_id, "not-base64url!!", "x")
+            result = run(self.client.redeem(fod_id, "not-base64url!!", "x"))
         except DidNotSupportedError as error:
             self.skipTest("the host does not offer the creator context: "
                           + str(error))

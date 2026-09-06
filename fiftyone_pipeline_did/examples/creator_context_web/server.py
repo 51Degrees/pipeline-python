@@ -67,6 +67,7 @@ Standard library plus this package. Run ``python server.py`` then open
 ``http://localhost:5100/``.
 """
 
+import asyncio
 import json
 import os
 import secrets
@@ -202,14 +203,15 @@ class Demo(BaseHTTPRequestHandler):
                 "errors": ["51did is not a valid 51Did: {0}".format(error)]})
             return
         try:
-            # The signature checked here, offline, before the cloud is
-            # asked to redeem anything, so a forged envelope is named by
-            # this server rather than only by the cloud.
-            signature_valid = client.verify_signature(fod_id)
-            redeemed = client.redeem(
-                fod_id,
+            # The client's cloud calls are coroutines. This demo sits on
+            # the standard library's synchronous http.server, so each
+            # request runs its check to completion on a short-lived event
+            # loop. A server built on asyncio would await check() on its
+            # own loop instead.
+            signature_valid, redeemed = asyncio.run(check(
+                client, fod_id,
                 query.get("result", [""])[0],
-                query.get("challenge", [""])[0])
+                query.get("challenge", [""])[0]))
             body = redeemed.to_dict()
             body["serverSignature"] = \
                 "verified" if signature_valid else "invalid"
@@ -250,6 +252,17 @@ class Demo(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+async def check(client, fod_id, result, challenge):
+    """The two cloud-facing steps of the server-side check, awaited in
+    turn. The signature is checked first, offline against the published
+    public keys, before the cloud is asked to redeem anything, so a forged
+    envelope is named by this server rather than only by the cloud.
+    Answers the offline verdict and the typed redemption."""
+    signature_valid = await client.verify_signature(fod_id)
+    redeemed = await client.redeem(fod_id, result, challenge)
+    return signature_valid, redeemed
 
 
 def _is_json(text):

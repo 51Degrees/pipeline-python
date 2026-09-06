@@ -20,14 +20,17 @@
 # such notice(s) shall fulfill the requirements of that article.
 # *********************************************************************
 
+import asyncio
 import base64
 import json
 import os
 import struct
+import threading
 import unittest
 import urllib.error
 import urllib.parse
 from datetime import datetime, timedelta, timezone
+from unittest import mock
 
 from owid import Crypto, Version
 
@@ -65,6 +68,15 @@ from .envelope import (
 RESOURCE = "AQAAAAAAAAA-resource"
 LICENCE = "licence-key-value"
 ENDPOINT = "https://cloud.example/api/v4/"
+
+
+def run(coroutine):
+    """Runs one client call to completion on a fresh event loop. The
+    client's cloud-facing methods are coroutines, and these are plain
+    unittest tests with no async runner, so each call is driven this way
+    and an exception the call raises surfaces here, where the test
+    expects it."""
+    return asyncio.run(coroutine)
 
 
 class FodIdBase64Tests(unittest.TestCase):
@@ -183,14 +195,14 @@ class PublicKeyTests(unittest.TestCase):
                                 transport=self.transport, now=self.clock)
 
     def test_starts_at_is_read_and_the_list_is_sorted_oldest_first(self):
-        keys = self.client.public_keys()
+        keys = run(self.client.public_keys())
         self.assertEqual([self.schedule.start(i) for i in range(4)],
                          [k.starts_at for k in keys])
         self.assertEqual(self.schedule.crypto(0).public_key_pem(),
                          keys[0].public_key)
 
     def test_request_is_a_get_to_the_key_route_with_user_agent(self):
-        self.client.public_keys()
+        run(self.client.public_keys())
         request = self.transport.last()
         self.assertEqual("GET", request.get_method())
         self.assertEqual(ENDPOINT + "id/key/" + RESOURCE, request.full_url)
@@ -200,35 +212,35 @@ class PublicKeyTests(unittest.TestCase):
     def test_created_is_read_where_starts_at_is_absent(self):
         self.transport.answers["id/key/"] = (
             200, self.schedule.json(start_field="created"))
-        keys = self.client.public_keys()
+        keys = run(self.client.public_keys())
         self.assertEqual([self.schedule.start(i) for i in range(4)],
                          [k.starts_at for k in keys])
 
     def test_second_call_is_a_cache_hit(self):
-        self.client.public_keys()
-        self.client.public_keys()
+        run(self.client.public_keys())
+        run(self.client.public_keys())
         self.assertEqual(1, self.transport.count("id/key/"))
 
     def test_key_for_a_covered_date_does_not_refetch(self):
         fod_id = signed_fod_id(self.schedule.crypto(1),
                                date=self.schedule.start(1)
                                + timedelta(days=3))
-        key = self.client.public_key_for(fod_id)
-        self.client.public_key_for(fod_id)
+        key = run(self.client.public_key_for(fod_id))
+        run(self.client.public_key_for(fod_id))
         self.assertEqual(self.schedule.start(1), key.starts_at)
         self.assertEqual(1, self.transport.count("id/key/"))
 
     def test_date_later_than_the_newest_start_refetches_once(self):
-        self.client.public_keys()
+        run(self.client.public_keys())
         fod_id = signed_fod_id(self.schedule.crypto(3),
                                date=self.schedule.start(3)
                                + timedelta(days=1))
-        key = self.client.public_key_for(fod_id)
+        key = run(self.client.public_key_for(fod_id))
         # Held from the warm-up, then fetched again because the date is
         # past the newest start held, and not a third time.
         self.assertEqual(2, self.transport.count("id/key/"))
         self.assertEqual(self.schedule.start(3), key.starts_at)
-        self.client.public_key_for(fod_id)
+        run(self.client.public_key_for(fod_id))
         self.assertEqual(3, self.transport.count("id/key/"))
 
     def test_date_past_the_newest_start_on_a_fresh_list_is_not_fetched_twice(
@@ -239,37 +251,37 @@ class PublicKeyTests(unittest.TestCase):
                                date=self.schedule.start(3)
                                + timedelta(days=1))
         self.assertEqual(self.schedule.start(3),
-                         self.client.public_key_for(fod_id).starts_at)
+                         run(self.client.public_key_for(fod_id)).starts_at)
         self.assertEqual(1, self.transport.count("id/key/"))
 
     def test_date_before_the_schedule_refetches_once_and_answers_none(self):
-        self.client.public_keys()
+        run(self.client.public_keys())
         fod_id = signed_fod_id(self.schedule.crypto(0),
                                date=self.schedule.start(0)
                                - timedelta(days=1))
-        self.assertIsNone(self.client.public_key_for(fod_id))
+        self.assertIsNone(run(self.client.public_key_for(fod_id)))
         self.assertEqual(2, self.transport.count("id/key/"))
 
     def test_list_older_than_a_day_is_refetched(self):
-        self.client.public_keys()
+        run(self.client.public_keys())
         self.clock.advance(timedelta(hours=23))
-        self.client.public_keys()
+        run(self.client.public_keys())
         self.assertEqual(1, self.transport.count("id/key/"))
         self.clock.advance(timedelta(hours=2))
-        self.client.public_keys()
+        run(self.client.public_keys())
         self.assertEqual(2, self.transport.count("id/key/"))
 
     def test_non_200_raises_with_status_and_body(self):
         self.transport.answers["id/key/"] = (401, '{"errors":["bad key"]}')
         with self.assertRaises(DidClientError) as raised:
-            self.client.public_keys()
+            run(self.client.public_keys())
         self.assertEqual(401, raised.exception.status_code)
         self.assertIn("bad key", raised.exception.body)
 
     def test_body_that_is_not_a_list_raises(self):
         self.transport.answers["id/key/"] = (200, '{"not":"a list"}')
         with self.assertRaises(DidClientError):
-            self.client.public_keys()
+            run(self.client.public_keys())
 
     def test_iso_8601_forms_the_cloud_writes(self):
         self.assertEqual(
@@ -283,6 +295,56 @@ class PublicKeyTests(unittest.TestCase):
             parse_iso8601("2026-08-07T09:15:32+01:00"))
         with self.assertRaises(ValueError):
             parse_iso8601("yesterday")
+
+
+class ConcurrentKeyFetchTests(unittest.TestCase):
+    """Concurrent awaits for the key list share one fetch. The scripted
+    answer yields to the event loop before answering, so the second call
+    really does start while the first fetch is in flight, rather than
+    finding the cache already filled."""
+
+    def setUp(self):
+        self.schedule = KeySchedule()
+        self.transport = FakeTransport({"id/key/": self.slow_answer})
+        self.client = DidClient(RESOURCE, endpoint=ENDPOINT,
+                                transport=self.transport)
+
+    async def slow_answer(self, request):
+        await asyncio.sleep(0.01)
+        return 200, self.schedule.json()
+
+    def test_two_concurrent_key_list_requests_make_one_http_call(self):
+        async def both():
+            return await asyncio.gather(self.client.public_keys(),
+                                        self.client.public_keys())
+        first, second = asyncio.run(both())
+        self.assertEqual(1, self.transport.count("id/key/"))
+        self.assertEqual([self.schedule.start(i) for i in range(4)],
+                         [k.starts_at for k in first])
+        self.assertEqual(first, second)
+
+    def test_concurrent_selections_past_the_newest_start_share_one_fetch(
+            self):
+        # Each call on its own would fetch again for a date past the
+        # newest start held, unless the list was fetched for that very
+        # call. A fetch that completes while a call waits is that call's
+        # own, so the two share it rather than fetching in turn.
+        fod_id = signed_fod_id(self.schedule.crypto(3),
+                               date=self.schedule.start(3)
+                               + timedelta(days=1))
+
+        async def both():
+            return await asyncio.gather(self.client.public_key_for(fod_id),
+                                        self.client.public_key_for(fod_id))
+        first, second = asyncio.run(both())
+        self.assertEqual(1, self.transport.count("id/key/"))
+        self.assertEqual(self.schedule.start(3), first.starts_at)
+        self.assertEqual(first, second)
+
+    def test_a_later_sequential_call_is_still_a_cache_hit(self):
+        run(self.client.public_keys())
+        run(self.client.public_keys())
+        self.assertEqual(1, self.transport.count("id/key/"))
 
 
 class KeySelectionTests(unittest.TestCase):
@@ -306,47 +368,47 @@ class KeySelectionTests(unittest.TestCase):
     def test_key_in_force_is_the_latest_start_on_or_before_the_date(self):
         mid_week = self.schedule.start(2) + timedelta(days=3)
         self.assertEqual(self.schedule.start(2),
-                         self.client.public_key_for(
-                             self.signed_by(2, mid_week)).starts_at)
+                         run(self.client.public_key_for(
+                             self.signed_by(2, mid_week))).starts_at)
         self.assertEqual(self.schedule.start(2),
-                         self.client.public_key_for(
-                             self.signed_by(2, self.schedule.start(2)))
+                         run(self.client.public_key_for(
+                             self.signed_by(2, self.schedule.start(2))))
                          .starts_at)
 
     def test_earlier_neighbour_within_the_tolerance_after_a_boundary(self):
         # Comfortably inside the allowance, so both keys are tried.
         just_after = self.schedule.start(2) + timedelta(minutes=1)
-        self.assertTrue(self.client.verify_signature(
-            self.signed_by(1, just_after)))
-        self.assertTrue(self.client.verify_signature(
-            self.signed_by(2, just_after)))
+        self.assertTrue(run(self.client.verify_signature(
+            self.signed_by(1, just_after))))
+        self.assertTrue(run(self.client.verify_signature(
+            self.signed_by(2, just_after))))
 
     def test_earlier_neighbour_not_tried_beyond_the_tolerance(self):
         # Far enough past the boundary to be outside any allowance.
         later = self.schedule.start(2) + timedelta(hours=1)
-        self.assertFalse(self.client.verify_signature(
-            self.signed_by(1, later)))
-        self.assertTrue(self.client.verify_signature(
-            self.signed_by(2, later)))
+        self.assertFalse(run(self.client.verify_signature(
+            self.signed_by(1, later))))
+        self.assertTrue(run(self.client.verify_signature(
+            self.signed_by(2, later))))
 
     def test_later_neighbour_within_the_tolerance_before_a_boundary(self):
         # Comfortably inside the allowance, so both keys are tried.
         just_before = self.schedule.start(2) - timedelta(minutes=1)
-        self.assertTrue(self.client.verify_signature(
-            self.signed_by(2, just_before)))
-        self.assertTrue(self.client.verify_signature(
-            self.signed_by(1, just_before)))
+        self.assertTrue(run(self.client.verify_signature(
+            self.signed_by(2, just_before))))
+        self.assertTrue(run(self.client.verify_signature(
+            self.signed_by(1, just_before))))
 
     def test_later_neighbour_not_tried_beyond_the_tolerance(self):
         # Far enough before the boundary to be outside any allowance.
         earlier = self.schedule.start(2) - timedelta(hours=1)
-        self.assertFalse(self.client.verify_signature(
-            self.signed_by(2, earlier)))
+        self.assertFalse(run(self.client.verify_signature(
+            self.signed_by(2, earlier))))
 
     def test_no_candidate_before_the_schedule(self):
         before = self.schedule.start(0) - timedelta(hours=1)
-        check = self.client.verify_signature_detailed(
-            self.signed_by(0, before))
+        check = run(self.client.verify_signature_detailed(
+            self.signed_by(0, before)))
         self.assertFalse(check.valid)
         self.assertEqual(SignatureReason.NO_KEY, check.reason)
 
@@ -354,8 +416,8 @@ class KeySelectionTests(unittest.TestCase):
         # The key for the first week must not sign something dated in the
         # fourth, which is the rule that makes a leak bounded.
         fourth_week = self.schedule.start(3) + timedelta(days=2)
-        check = self.client.verify_signature_detailed(
-            self.signed_by(0, fourth_week))
+        check = run(self.client.verify_signature_detailed(
+            self.signed_by(0, fourth_week)))
         self.assertFalse(check.valid)
         self.assertEqual(SignatureReason.SIGNATURE, check.reason)
 
@@ -372,25 +434,26 @@ class OfflineVerificationTests(unittest.TestCase):
         self.crypto = self.schedule.crypto(1)
 
     def test_true_with_the_real_key(self):
-        check = self.client.verify_signature_detailed(
-            signed_fod_id(self.crypto, date=self.date))
+        check = run(self.client.verify_signature_detailed(
+            signed_fod_id(self.crypto, date=self.date)))
         self.assertTrue(check.valid)
         self.assertEqual(SignatureReason.VERIFIED, check.reason)
 
     def test_accepts_the_base64_string_form(self):
         fod_id = signed_fod_id(self.crypto, date=self.date)
-        self.assertTrue(self.client.verify_signature(fod_id.as_base64_url()))
+        self.assertTrue(run(
+            self.client.verify_signature(fod_id.as_base64_url())))
 
     def test_false_with_the_wrong_key(self):
-        check = self.client.verify_signature_detailed(
-            signed_fod_id(Crypto.new(), date=self.date))
+        check = run(self.client.verify_signature_detailed(
+            signed_fod_id(Crypto.new(), date=self.date)))
         self.assertFalse(check.valid)
         self.assertEqual(SignatureReason.SIGNATURE, check.reason)
 
     def test_false_for_version_2(self):
         fod_id = signed_fod_id(self.crypto, date=self.date,
                                version=Version.VERSION2)
-        check = self.client.verify_signature_detailed(fod_id)
+        check = run(self.client.verify_signature_detailed(fod_id))
         self.assertFalse(check.valid)
         self.assertEqual(SignatureReason.VERSION, check.reason)
         # Not a network failure: no key was needed to refuse it.
@@ -401,20 +464,20 @@ class OfflineVerificationTests(unittest.TestCase):
         # one short shape that reaches the verifier.
         payload = bytes([0b1100_0000, 0, 0, 0, 0])
         fod_id = signed_fod_id(self.crypto, payload=payload, date=self.date)
-        check = self.client.verify_signature_detailed(fod_id)
+        check = run(self.client.verify_signature_detailed(fod_id))
         self.assertFalse(check.valid)
         self.assertEqual(SignatureReason.LENGTH, check.reason)
 
     def test_random_type_base_is_twenty_one_bytes(self):
         fod_id = signed_fod_id(self.crypto, payload=random_payload(),
                                date=self.date)
-        self.assertTrue(self.client.verify_signature(fod_id))
+        self.assertTrue(run(self.client.verify_signature(fod_id)))
 
     def test_true_for_a_payload_longer_than_the_base(self):
         fod_id = signed_fod_id(self.crypto, payload=context_payload(),
                                date=self.date)
         self.assertGreater(len(fod_id.payload), FodId.PAYLOAD_LENGTH)
-        self.assertTrue(self.client.verify_signature(fod_id))
+        self.assertTrue(run(self.client.verify_signature(fod_id)))
 
     def test_true_for_a_payload_far_longer_than_the_base(self):
         # A context section of a version this package does not know
@@ -422,7 +485,7 @@ class OfflineVerificationTests(unittest.TestCase):
         fod_id = signed_fod_id(
             self.crypto, payload=context_payload() + bytes(200),
             date=self.date)
-        self.assertTrue(self.client.verify_signature(fod_id))
+        self.assertTrue(run(self.client.verify_signature(fod_id)))
 
     def test_true_for_a_long_creator_domain(self):
         # The creator domain is a deployment parameter, so a
@@ -430,18 +493,18 @@ class OfflineVerificationTests(unittest.TestCase):
         fod_id = signed_fod_id(
             self.crypto, payload=context_payload(), date=self.date,
             domain="identifiers." + ("a" * 120) + ".example")
-        self.assertTrue(self.client.verify_signature(fod_id))
+        self.assertTrue(run(self.client.verify_signature(fod_id)))
 
     def test_verify_signature_refuses_far_too_long_text(self):
         # Obviously malformed input is refused before it is decoded
         # and before any key is fetched.
         with self.assertRaises(ValueError):
-            self.client.verify_signature("A" * 5000)
+            run(self.client.verify_signature("A" * 5000))
         self.assertEqual(0, self.transport.count("id/key/"))
 
     def test_public_key_for_refuses_far_too_long_text(self):
         with self.assertRaises(ValueError):
-            self.client.public_key_for("A" * 5000)
+            run(self.client.public_key_for("A" * 5000))
         self.assertEqual(0, self.transport.count("id/key/"))
 
 
@@ -456,7 +519,7 @@ class CloudVerifyTests(unittest.TestCase):
 
     def test_200_valid(self):
         self.transport.answers["id/verify/"] = (200, '{"valid":true}')
-        self.assertTrue(self.client.verify(self.fod_id))
+        self.assertTrue(run(self.client.verify(self.fod_id)))
         request = self.transport.last()
         self.assertEqual("GET", request.get_method())
         parsed = urllib.parse.urlparse(request.full_url)
@@ -471,7 +534,7 @@ class CloudVerifyTests(unittest.TestCase):
 
     def test_400_invalid(self):
         self.transport.answers["id/verify/"] = (400, '{"valid":false}')
-        self.assertFalse(self.client.verify(self.fod_id))
+        self.assertFalse(run(self.client.verify(self.fod_id)))
 
     def test_400_errors_from_the_cloud_raises_the_argument_error(self):
         # A string that parses here can still be refused by the cloud, for
@@ -481,7 +544,7 @@ class CloudVerifyTests(unittest.TestCase):
             400, '{"errors":["Value for 51did is not a 51Did this service '
                  'issued."]}')
         with self.assertRaises(DidArgumentError) as raised:
-            self.client.verify(self.fod_id.as_base64_url())
+            run(self.client.verify(self.fod_id.as_base64_url()))
         self.assertIsInstance(raised.exception, ValueError)
         self.assertIn("not a 51Did this service issued",
                       str(raised.exception))
@@ -497,7 +560,7 @@ class CloudVerifyTests(unittest.TestCase):
         self.assertIn("+", standard)
         self.assertIn("/", standard)
         self.transport.answers["id/verify/"] = (200, '{"valid":true}')
-        self.client.verify(standard)
+        run(self.client.verify(standard))
         encoded = urllib.parse.quote(standard, safe="")
         self.assertIn("51did=" + encoded, self.transport.last().full_url)
         self.assertIn("owid=" + encoded, self.transport.last().full_url)
@@ -505,19 +568,19 @@ class CloudVerifyTests(unittest.TestCase):
     def test_padded_and_unpadded_forms_are_both_accepted(self):
         fod_id = signed_fod_id(Crypto.new(), payload=context_payload())
         self.transport.answers["id/verify/"] = (200, '{"valid":true}')
-        self.assertTrue(self.client.verify(fod_id.as_base64()))
-        self.assertTrue(self.client.verify(fod_id.as_base64_url()))
+        self.assertTrue(run(self.client.verify(fod_id.as_base64())))
+        self.assertTrue(run(self.client.verify(fod_id.as_base64_url())))
         self.assertEqual(2, self.transport.count("id/verify/"))
 
     def test_verify_refuses_far_too_long_text_before_transport(self):
         with self.assertRaises(ValueError):
-            self.client.verify("A" * 5000)
+            run(self.client.verify("A" * 5000))
         self.assertEqual(0, len(self.transport.requests))
 
     def test_other_status_raises_the_client_error(self):
         self.transport.answers["id/verify/"] = (500, "boom")
         with self.assertRaises(DidClientError) as raised:
-            self.client.verify(self.fod_id)
+            run(self.client.verify(self.fod_id))
         self.assertEqual(500, raised.exception.status_code)
         self.assertEqual("boom", raised.exception.body)
 
@@ -525,7 +588,7 @@ class CloudVerifyTests(unittest.TestCase):
         self.transport.answers["id/verify/"] = urllib.error.URLError(
             "no route to host")
         with self.assertRaises(OSError):
-            self.client.verify(self.fod_id)
+            run(self.client.verify(self.fod_id))
 
 
 REDEEMED_WITH_FACTORS = json.dumps({
@@ -557,7 +620,7 @@ class RedeemTests(unittest.TestCase):
 
     def redeem(self, status, body, challenge="abc123"):
         self.transport.answers["id/redeem"] = (status, body)
-        return self.client.redeem(self.fod_id, "sealed-result", challenge)
+        return run(self.client.redeem(self.fod_id, "sealed-result", challenge))
 
     def test_request_is_a_post_with_every_field_in_the_body(self):
         self.redeem(200, REDEEMED_WITHOUT_FACTORS)
@@ -585,7 +648,7 @@ class RedeemTests(unittest.TestCase):
         client = DidClient(RESOURCE, endpoint=ENDPOINT,
                            transport=self.transport)
         self.transport.answers["id/redeem"] = (200, REDEEMED_WITHOUT_FACTORS)
-        client.redeem(self.fod_id, "sealed-result", "abc123")
+        run(client.redeem(self.fod_id, "sealed-result", "abc123"))
         form = form_of(self.transport.last())
         self.assertNotIn("license", form)
         self.assertEqual(RESOURCE, form["resource"])
@@ -694,7 +757,7 @@ class RedeemTests(unittest.TestCase):
         self.transport.answers["id/redeem"] = urllib.error.URLError(
             "connection refused")
         with self.assertRaises(OSError):
-            self.client.redeem(self.fod_id, "sealed-result", "abc123")
+            run(self.client.redeem(self.fod_id, "sealed-result", "abc123"))
 
     def test_string_identifier_is_sent_as_given(self):
         # The padded standard form goes as given rather than being
@@ -702,14 +765,14 @@ class RedeemTests(unittest.TestCase):
         text = self.fod_id.as_base64()
         self.assertTrue(text.endswith("="))
         self.transport.answers["id/redeem"] = (200, '{"context":"unreadable"}')
-        self.client.redeem(text, "sealed-result", None)
+        run(self.client.redeem(text, "sealed-result", None))
         form = form_of(self.transport.last())
         self.assertEqual(text, form["51did"])
         self.assertEqual("", form["challenge"])
 
     def test_redeem_refuses_far_too_long_text_before_the_form(self):
         with self.assertRaises(ValueError):
-            self.client.redeem("A" * 5000, "sealed-result")
+            run(self.client.redeem("A" * 5000, "sealed-result"))
         self.assertEqual(0, len(self.transport.requests))
 
     def test_result_class_can_be_built_from_a_response_directly(self):
@@ -760,9 +823,64 @@ class OpenerTransportTests(unittest.TestCase):
 
         opener = Opener()
         client = DidClient(RESOURCE, endpoint=ENDPOINT, transport=opener)
-        self.assertFalse(client.verify(
-            signed_fod_id(Crypto.new()).as_base64_url()))
+        self.assertFalse(run(client.verify(
+            signed_fod_id(Crypto.new()).as_base64_url())))
         self.assertEqual(1, len(opener.calls))
+
+
+class TransportContractTests(unittest.TestCase):
+    """An injected callable must be an async one. A plain callable that
+    answers a tuple is refused by name, so the mistake is named rather
+    than failing on the await."""
+
+    def test_plain_callable_transport_is_refused(self):
+        def blocking_transport(request):
+            return 200, b'{"valid":true}'
+
+        client = DidClient(RESOURCE, endpoint=ENDPOINT,
+                           transport=blocking_transport)
+        with self.assertRaises(TypeError) as raised:
+            run(client.verify(signed_fod_id(Crypto.new())))
+        self.assertIn("async callable", str(raised.exception))
+
+
+class DefaultTransportTests(unittest.TestCase):
+    """With no transport injected the client opens the request with
+    urllib on a worker thread, passing the timeout it was given. urlopen
+    is replaced for the test so nothing leaves the machine."""
+
+    def test_default_transport_is_urlopen_with_the_timeout(self):
+        class Response:
+            status = 200
+
+            def read(self):
+                return b'{"valid":true}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        calls = []
+
+        def fake_urlopen(request, timeout=None):
+            calls.append((request, timeout, threading.current_thread()))
+            return Response()
+
+        client = DidClient(RESOURCE, endpoint=ENDPOINT, timeout=7.5)
+        # asyncio.run drives the loop on the calling thread, so this is
+        # the loop's thread.
+        loop_thread = threading.current_thread()
+        with mock.patch("urllib.request.urlopen", fake_urlopen):
+            self.assertTrue(run(client.verify(signed_fod_id(Crypto.new()))))
+        self.assertEqual(1, len(calls))
+        request, timeout, thread = calls[0]
+        self.assertEqual("GET", request.get_method())
+        self.assertTrue(request.full_url.startswith(ENDPOINT + "id/verify/"))
+        self.assertEqual(7.5, timeout)
+        # Blocking I/O kept off the event loop's thread.
+        self.assertIsNot(loop_thread, thread)
 
 
 class MalformedIdentifierTests(unittest.TestCase):
@@ -799,7 +917,7 @@ class MalformedIdentifierTests(unittest.TestCase):
                          self.client.verify_signature_detailed,
                          self.client.public_key_for):
                 with self.assertRaises((OwidError, ValueError), msg=text):
-                    call(text)
+                    run(call(text))
         self.assertEqual(0, len(self.transport.requests))
 
     def test_parser_names_the_reason_before_the_client_is_asked(self):
@@ -818,12 +936,12 @@ class MalformedIdentifierTests(unittest.TestCase):
             self):
         for text in self.malformed():
             with self.assertRaises(DidArgumentError, msg=text) as raised:
-                self.client.verify(text)
+                run(self.client.verify(text))
             self.assertIsInstance(raised.exception, ValueError)
             # Refused here, so there is no cloud status to carry.
             self.assertIsNone(raised.exception.status_code)
             with self.assertRaises(DidArgumentError, msg=text):
-                self.client.redeem(text, "sealed-result", "abc")
+                run(self.client.redeem(text, "sealed-result", "abc"))
         self.assertEqual(0, len(self.transport.requests))
 
     def test_cloud_surface_refusal_names_the_parse_status(self):
@@ -833,7 +951,7 @@ class MalformedIdentifierTests(unittest.TestCase):
                     FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH)
         for text, status in zip(self.malformed(), expected):
             with self.assertRaises(DidArgumentError) as raised:
-                self.client.redeem(text, "sealed-result", "abc")
+                run(self.client.redeem(text, "sealed-result", "abc"))
             self.assertIn(status.value, str(raised.exception))
         self.assertEqual(0, len(self.transport.requests))
 
@@ -843,14 +961,14 @@ class MalformedIdentifierTests(unittest.TestCase):
         raw[-1] ^= 0xFF
         result = FodId.try_from_byte_array(bytes(raw))
         self.assertTrue(result.ok)
-        check = self.client.verify_signature_detailed(result.value)
+        check = run(self.client.verify_signature_detailed(result.value))
         self.assertFalse(check.valid)
         self.assertEqual(SignatureReason.SIGNATURE, check.reason)
 
     def test_no_key_for_the_date_is_not_reported_as_a_bad_signature(self):
         before = self.schedule.start(0) - timedelta(days=30)
-        check = self.client.verify_signature_detailed(
-            signed_fod_id(self.crypto, date=before))
+        check = run(self.client.verify_signature_detailed(
+            signed_fod_id(self.crypto, date=before)))
         self.assertFalse(check.valid)
         self.assertEqual(SignatureReason.NO_KEY, check.reason)
         self.assertNotEqual(SignatureReason.SIGNATURE, check.reason)
@@ -859,12 +977,12 @@ class MalformedIdentifierTests(unittest.TestCase):
         self.transport.answers["id/key/"] = urllib.error.URLError(
             "no route to host")
         with self.assertRaises(OSError):
-            self.client.verify_signature(
-                signed_fod_id(self.crypto, date=self.date))
+            run(self.client.verify_signature(
+                signed_fod_id(self.crypto, date=self.date)))
         self.transport.answers["id/key/"] = (500, "boom")
         with self.assertRaises(DidClientError):
-            self.client.verify_signature_detailed(
-                signed_fod_id(self.crypto, date=self.date))
+            run(self.client.verify_signature_detailed(
+                signed_fod_id(self.crypto, date=self.date)))
 
     def test_oversized_text_is_the_client_guard_not_a_parse_status(self):
         # The parser has no size limit of its own and answers the oversized
@@ -875,7 +993,7 @@ class MalformedIdentifierTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIsInstance(result.status, FodIdParseStatus)
         with self.assertRaises(ValueError):
-            self.client.verify_signature(text)
+            run(self.client.verify_signature(text))
         self.assertEqual(0, len(self.transport.requests))
 
 
