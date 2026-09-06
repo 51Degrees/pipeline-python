@@ -448,6 +448,13 @@ class DidClient:
         """The resource key the requests carry."""
         return self._resource_key
 
+    @property
+    def has_licence_key(self) -> bool:
+        """Whether the client was given a licence key. A licence key is
+        needed only by :meth:`redeem`, so a client without one still
+        reads keys and verifies signatures."""
+        return self._licence_key is not None
+
     # ----- Public keys and key selection -----
 
     def public_keys(self) -> List[PublicKeyEntry]:
