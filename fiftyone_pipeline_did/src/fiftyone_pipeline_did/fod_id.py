@@ -37,6 +37,7 @@ from ._owid import (
 )
 
 from .id_type import IdType
+from .usage import Usage
 
 #: The moment the envelope's date field counts minutes from, being the OWID
 #: epoch of 2020-01-01T00:00:00Z. :attr:`FodId.date_minutes` is the unsigned
@@ -386,6 +387,21 @@ class FodId:
     def type(self) -> IdType:
         """The identifier type carried in bits 6-7 of :attr:`flags`."""
         return IdType.from_flags(self._flags)
+
+    @property
+    def usage(self) -> Usage:
+        """The usage carried in bits 0-2 of :attr:`flags`, as the highest
+        usage granted. See :class:`~fiftyone_pipeline_did.Usage` for why
+        it is read that way."""
+        return Usage.from_flags(self._flags)
+
+    @property
+    def usage_from_consent(self) -> bool:
+        """Whether the usage was derived from an IAB consent string the
+        caller sent, rather than stated by the caller directly. Bit 3 of
+        :attr:`flags`. Both are legitimate ways to arrive at a usage, and
+        this says nothing about which usage it is."""
+        return (self._flags & 0b1000) != 0
 
     @property
     def license_id(self) -> int:

@@ -65,12 +65,14 @@ from .did_client import (
 from ._owid import Owid, OwidError, SignatureStatus
 from .fod_id import DATE_EPOCH, FodId, FodIdParseResult, FodIdParseStatus
 from .id_type import IdType
+from .usage import Usage
 
 __all__ = [
     "FodId",
     "FodIdParseResult",
     "FodIdParseStatus",
     "IdType",
+    "Usage",
     "DATE_EPOCH",
     "DidClient",
     "RedeemResult",

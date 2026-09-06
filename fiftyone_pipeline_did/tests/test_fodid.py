@@ -33,6 +33,7 @@ from fiftyone_pipeline_did import (
     FodIdParseStatus,
     IdType,
     OwidError,
+    Usage,
     SignatureStatus,
 )
 
@@ -288,6 +289,33 @@ class FodIdTests(unittest.TestCase):
         payload[FodId.FLAGS_OFFSET] = flags
         return FodId.from_base64(
             self.factory.signed_owid_base64(payload)).type
+
+    def test_usage_is_the_highest_granted(self):
+        """The usage is the highest granted, because the bits are
+        cumulative. A mask for the non-marketing bit alone would say yes
+        for every marketing identifier, which is the wrong answer for a
+        data protection decision."""
+        cases = [
+            (0b000, Usage.NONE, None),
+            (0b001, Usage.NON_MARKETING, "non-marketing"),
+            (0b011, Usage.STANDARD, "standard"),
+            (0b111, Usage.PERSONALIZED, "personalized"),
+        ]
+        for bits, expected, id_usage in cases:
+            payload = canonical_random_payload()
+            payload[FodId.FLAGS_OFFSET] = (1 << 6) | bits
+            fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
+            self.assertEqual(expected, fod.usage, "usage bits %s" % bin(bits))
+            self.assertEqual(id_usage, fod.usage.id_usage)
+            self.assertEqual(IdType.RANDOM, fod.type)
+            self.assertFalse(fod.usage_from_consent)
+
+    def test_usage_from_consent_is_bit_three(self):
+        payload = canonical_random_payload()
+        payload[FodId.FLAGS_OFFSET] = (1 << 6) | 0b1011
+        fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
+        self.assertTrue(fod.usage_from_consent)
+        self.assertEqual(Usage.STANDARD, fod.usage)
 
     def test_type_random_when_bits_01(self):
         fod = FodId.from_base64(
