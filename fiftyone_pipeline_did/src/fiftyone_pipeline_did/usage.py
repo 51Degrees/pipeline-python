@@ -25,20 +25,23 @@ from typing import Optional
 
 
 class Usage(IntEnum):
-    """The usage a 51Did was created for, carried in bits 0-2 of
-    :attr:`~fiftyone_pipeline_did.FodId.flags`. It decides where the
-    identifier may go: one created for :attr:`NON_MARKETING` must never be
-    passed to a demand source, and one created for :attr:`STANDARD` or
-    :attr:`PERSONALIZED` may be passed only to a recipient that has accepted
-    the applicable terms.
+    """The usage a 51Did was created for, read from the identifier through
+    :attr:`~fiftyone_pipeline_did.FodId.usage`. It decides where the
+    identifier may go, because one created for :attr:`NON_MARKETING` must
+    never be passed to a demand source, and one created for
+    :attr:`STANDARD` or :attr:`PERSONALIZED` may be passed only to a
+    recipient that has accepted the applicable terms.
 
-    The three usages are cumulative rather than exclusive in the byte.
-    Non-marketing sets bit 0, standard sets bits 0 and 1, and personalized
-    sets bits 0, 1 and 2, so every marketing identifier also carries the
-    non-marketing bit. A caller who masked the byte for that bit alone would
-    read every marketing identifier as non-marketing, which is the wrong way
-    round for a data protection decision. :meth:`from_flags` answers with
-    the highest usage granted, so that mistake cannot be made.
+    The three usages are cumulative rather than exclusive in the bits that
+    carry them. Non-marketing sets the first, standard sets the first two,
+    and personalized sets all three, so every marketing identifier also
+    carries the non-marketing bit. A caller who masked for that bit alone
+    would read every marketing identifier as non-marketing, which is the
+    wrong way round for a data protection decision.
+    :attr:`~fiftyone_pipeline_did.FodId.usage` answers with the highest
+    usage granted, so that mistake cannot be made. The bits themselves are
+    specified at
+    https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
 
     The names match the cloud's ``id.usage`` values, ``non-marketing``,
     ``standard`` and ``personalized``, and are the same in every 51Did

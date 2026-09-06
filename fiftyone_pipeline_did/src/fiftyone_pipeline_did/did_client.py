@@ -56,7 +56,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from ._owid import Version
 
-from .fod_id import DATE_EPOCH, FodId
+from ._layout import GUID_LENGTH, HEADER_LENGTH, MATCH_KEY_LENGTH
+from .fod_id import DATE_EPOCH, FodId, _date_minutes
 from .id_type import IdType
 
 #: The public cloud API base, used when neither the ``endpoint`` argument
@@ -784,8 +785,11 @@ def _ensure_encoded_size(value: str) -> None:
 
 def _date_of(fod_id: FodId) -> datetime:
     """The identifier's creation moment, from the minutes the envelope
-    carries, as an aware UTC datetime."""
-    return DATE_EPOCH + timedelta(minutes=fod_id.date_minutes)
+    carries, as an aware UTC datetime. Read through the package's own
+    private helper rather than a public accessor, because the whole minute
+    the envelope holds is what picks the signing key and a caller has no
+    use for the wire form."""
+    return DATE_EPOCH + timedelta(minutes=_date_minutes(fod_id))
 
 
 def _payload_length_valid(fod_id: FodId) -> bool:
@@ -794,9 +798,9 @@ def _payload_length_valid(fod_id: FodId) -> bool:
     identifier. Anything beyond the base is a creator context section,
     whose exact lengths belong to the cloud, so any longer payload is
     accepted here."""
-    match_key_length = FodId.GUID_LENGTH if fod_id.type is IdType.RANDOM \
-        else FodId.MATCH_KEY_LENGTH
-    return len(fod_id.payload) >= FodId.HEADER_LENGTH + match_key_length
+    match_key_length = GUID_LENGTH if fod_id.type is IdType.RANDOM \
+        else MATCH_KEY_LENGTH
+    return len(fod_id.payload) >= HEADER_LENGTH + match_key_length
 
 
 def _in_force_at(keys: List[PublicKeyEntry],
