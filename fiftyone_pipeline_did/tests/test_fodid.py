@@ -33,16 +33,32 @@ from fiftyone_pipeline_did import (
     FodIdParseStatus,
     IdType,
     OwidError,
+    Usage,
     SignatureStatus,
 )
 
+# The byte layout is not part of the package's public surface. These tests
+# build payloads byte by byte, so they read it from the private module, as
+# https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
+# says the package's own tests may.
+from fiftyone_pipeline_did._layout import (
+    FLAGS_OFFSET,
+    GUID_LENGTH,
+    HEADER_LENGTH,
+    LICENSE_ID_LENGTH,
+    LICENSE_ID_OFFSET,
+    MATCH_KEY_LENGTH,
+    MATCH_KEY_OFFSET,
+    PAYLOAD_LENGTH,
+    RANDOM_PAYLOAD_LENGTH,
+)
 from .envelope import envelope_bytes, signed_envelope
 
 TEST_DOMAIN = "51degrees.com"
 # 0xA5: usage bits plus the HashedEmail type tag in bits 6-7.
 CANONICAL_FLAGS = 0xA5
 CANONICAL_LICENSE_ID = 0x12345678
-CANONICAL_MATCH_KEY = bytes((0x20 + i) for i in range(FodId.MATCH_KEY_LENGTH))
+CANONICAL_MATCH_KEY = bytes((0x20 + i) for i in range(MATCH_KEY_LENGTH))
 
 #: A creator domain longer than the one the cloud signs with, as a
 #: self-hosted container may be configured to use.
@@ -51,28 +67,28 @@ LONG_DOMAIN = "identifiers." + ("a" * 120) + ".example"
 
 def _write_license_id(payload):
     # Little-endian: low byte first (0x12345678 -> 78 56 34 12).
-    payload[FodId.LICENSE_ID_OFFSET] = 0x78
-    payload[FodId.LICENSE_ID_OFFSET + 1] = 0x56
-    payload[FodId.LICENSE_ID_OFFSET + 2] = 0x34
-    payload[FodId.LICENSE_ID_OFFSET + 3] = 0x12
+    payload[LICENSE_ID_OFFSET] = 0x78
+    payload[LICENSE_ID_OFFSET + 1] = 0x56
+    payload[LICENSE_ID_OFFSET + 2] = 0x34
+    payload[LICENSE_ID_OFFSET + 3] = 0x12
 
 
 def canonical_payload():
-    payload = bytearray(FodId.PAYLOAD_LENGTH)
-    payload[FodId.FLAGS_OFFSET] = CANONICAL_FLAGS
+    payload = bytearray(PAYLOAD_LENGTH)
+    payload[FLAGS_OFFSET] = CANONICAL_FLAGS
     _write_license_id(payload)
-    payload[FodId.MATCH_KEY_OFFSET:
-            FodId.MATCH_KEY_OFFSET + FodId.MATCH_KEY_LENGTH] = \
+    payload[MATCH_KEY_OFFSET:
+            MATCH_KEY_OFFSET + MATCH_KEY_LENGTH] = \
         CANONICAL_MATCH_KEY
     return bytearray(payload)
 
 
 def canonical_random_payload():
-    payload = bytearray(FodId.RANDOM_PAYLOAD_LENGTH)
-    payload[FodId.FLAGS_OFFSET] = (1 << 6) | 0b001  # Random tag + usage bits
+    payload = bytearray(RANDOM_PAYLOAD_LENGTH)
+    payload[FLAGS_OFFSET] = (1 << 6) | 0b001  # Random tag + usage bits
     _write_license_id(payload)
-    for i in range(FodId.GUID_LENGTH):
-        payload[FodId.MATCH_KEY_OFFSET + i] = 0x40 + i
+    for i in range(GUID_LENGTH):
+        payload[MATCH_KEY_OFFSET + i] = 0x40 + i
     return bytearray(payload)
 
 
@@ -105,19 +121,29 @@ class FodIdTests(unittest.TestCase):
     # ----- Current .NET coverage -----
 
     def test_constants_are_internally_consistent(self):
-        self.assertEqual(FodId.MATCH_KEY_OFFSET + FodId.MATCH_KEY_LENGTH,
-                         FodId.PAYLOAD_LENGTH)
-        self.assertEqual(FodId.LICENSE_ID_OFFSET + FodId.LICENSE_ID_LENGTH,
-                         FodId.MATCH_KEY_OFFSET)
-        self.assertEqual(FodId.MATCH_KEY_OFFSET + FodId.GUID_LENGTH,
-                         FodId.RANDOM_PAYLOAD_LENGTH)
+        self.assertEqual(MATCH_KEY_OFFSET + MATCH_KEY_LENGTH,
+                         PAYLOAD_LENGTH)
+        self.assertEqual(LICENSE_ID_OFFSET + LICENSE_ID_LENGTH,
+                         MATCH_KEY_OFFSET)
+        self.assertEqual(MATCH_KEY_OFFSET + GUID_LENGTH,
+                         RANDOM_PAYLOAD_LENGTH)
 
-    def test_deprecated_constant_aliases_hold_the_new_values(self):
-        # The offset and length of the match key field are now named after
-        # the match key. The old names stay for a release as aliases
-        # holding the same values.
-        self.assertEqual(FodId.MATCH_KEY_OFFSET, FodId.HASH_OFFSET)
-        self.assertEqual(FodId.MATCH_KEY_LENGTH, FodId.HASH_LENGTH)
+    def test_raw_surface_is_not_public(self):
+        # The raw byte, the layout constants and the old Hash names are
+        # gone. Every field has a typed accessor, and an offset is only
+        # ever wanted in order to read a field by hand, which is the way
+        # that gets the cumulative usage bits wrong. The layout stays
+        # available to this package through the private _layout module.
+        fod = FodId.from_base64(
+            self.factory.signed_owid_base64(canonical_payload()))
+        for name in ("flags", "hash", "date_minutes", "FLAGS_OFFSET",
+                     "LICENSE_ID_OFFSET", "LICENSE_ID_LENGTH",
+                     "MATCH_KEY_OFFSET", "MATCH_KEY_LENGTH",
+                     "HEADER_LENGTH", "GUID_LENGTH",
+                     "RANDOM_PAYLOAD_LENGTH", "PAYLOAD_LENGTH",
+                     "HASH_OFFSET", "HASH_LENGTH"):
+            self.assertFalse(hasattr(FodId, name), name)
+            self.assertFalse(hasattr(fod, name), name)
 
     def test_exposes_owid_level_fields(self):
         fod = FodId.from_base64(
@@ -129,7 +155,7 @@ class FodIdTests(unittest.TestCase):
     def test_from_base64_unpacks_all_three_fields(self):
         fod = FodId.from_base64(
             self.factory.signed_owid_base64(canonical_payload()))
-        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_FLAGS, fod._flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
         self.assertEqual(TEST_DOMAIN, fod.domain)
@@ -137,7 +163,7 @@ class FodIdTests(unittest.TestCase):
     def test_from_byte_array_unpacks_all_three_fields(self):
         buffer = self.factory.signed_bytes(canonical_payload())
         fod = FodId.from_byte_array(buffer)
-        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_FLAGS, fod._flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
         self.assertEqual(TEST_DOMAIN, fod.domain)
@@ -145,7 +171,7 @@ class FodIdTests(unittest.TestCase):
     def test_from_owid_unpacks_all_three_fields(self):
         owid = self.factory.signed_owid(canonical_payload())
         fod = FodId.from_owid(owid)
-        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_FLAGS, fod._flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
         self.assertEqual(owid.domain, fod.domain)
@@ -160,36 +186,39 @@ class FodIdTests(unittest.TestCase):
 
     def test_license_id_is_little_endian(self):
         payload = canonical_payload()
-        payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET + 4] = \
+        payload[LICENSE_ID_OFFSET:LICENSE_ID_OFFSET + 4] = \
             bytes([0x01, 0x00, 0x00, 0x00])
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(1, fod.license_id)
 
     def test_license_id_max_value(self):
         payload = canonical_payload()
-        payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET + 4] = \
+        payload[LICENSE_ID_OFFSET:LICENSE_ID_OFFSET + 4] = \
             bytes([0xFF, 0xFF, 0xFF, 0xFF])
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(4294967295, fod.license_id)
 
     def test_license_id_high_bit_stays_unsigned(self):
         payload = canonical_payload()
-        payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET + 4] = \
+        payload[LICENSE_ID_OFFSET:LICENSE_ID_OFFSET + 4] = \
             bytes([0x00, 0x00, 0x00, 0x80])
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(0x80000000, fod.license_id)
 
-    def test_flags_zero_value_exposed(self):
+    def test_flags_byte_of_zero_is_read(self):
+        # The byte itself is private now, so these two read it where it is
+        # kept and pin that every bit of it survives the parse for the
+        # typed accessors to read.
         payload = canonical_payload()
-        payload[FodId.FLAGS_OFFSET] = 0x00
+        payload[FLAGS_OFFSET] = 0x00
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
-        self.assertEqual(0, fod.flags)
+        self.assertEqual(0, fod._flags)
 
-    def test_flags_all_bits_set_exposed(self):
+    def test_flags_byte_of_all_bits_set_is_read(self):
         payload = canonical_payload()
-        payload[FodId.FLAGS_OFFSET] = 0xFF
+        payload[FLAGS_OFFSET] = 0xFF
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
-        self.assertEqual(255, fod.flags)
+        self.assertEqual(255, fod._flags)
 
     def test_match_key_is_immutable(self):
         fod = FodId.from_base64(
@@ -201,19 +230,9 @@ class FodIdTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             fod.match_key[0] = 0x00
 
-    def test_deprecated_hash_alias_returns_match_key_and_warns(self):
-        # The stable, comparable part of a 51Did is now called the match
-        # key. The old name stays for a release as an alias that warns.
-        fod = FodId.from_base64(
-            self.factory.signed_owid_base64(canonical_payload()))
-        with self.assertWarns(DeprecationWarning):
-            alias = fod.hash
-        self.assertEqual(fod.match_key, alias)
-        self.assertEqual(CANONICAL_MATCH_KEY, alias)
-
     def test_payload_one_byte_short_raises(self):
         base64 = self.factory.signed_owid_base64(
-            bytearray(FodId.PAYLOAD_LENGTH - 1))
+            bytearray(PAYLOAD_LENGTH - 1))
         with self.assertRaises(ValueError):
             FodId.from_base64(base64)
 
@@ -236,14 +255,14 @@ class FodIdTests(unittest.TestCase):
 
     def test_payload_larger_than_spec_uses_first_37_bytes(self):
         payload = bytearray(64)
-        payload[0:FodId.PAYLOAD_LENGTH] = canonical_payload()
-        for i in range(FodId.PAYLOAD_LENGTH, len(payload)):
+        payload[0:PAYLOAD_LENGTH] = canonical_payload()
+        for i in range(PAYLOAD_LENGTH, len(payload)):
             payload[i] = 0xCC
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
-        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_FLAGS, fod._flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
-        self.assertEqual(FodId.MATCH_KEY_LENGTH, len(fod.match_key))
+        self.assertEqual(MATCH_KEY_LENGTH, len(fod.match_key))
 
     def test_long_envelope_parses_and_keeps_the_header_fields(self):
         # No upper bound belongs in the reader: a creator domain is a
@@ -255,10 +274,10 @@ class FodIdTests(unittest.TestCase):
                              domain=LONG_DOMAIN, signature=bytes(64))
         fod = FodId.from_byte_array(raw)
         self.assertEqual(LONG_DOMAIN, fod.domain)
-        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_FLAGS, fod._flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
-        self.assertEqual(FodId.MATCH_KEY_LENGTH, len(fod.match_key))
+        self.assertEqual(MATCH_KEY_LENGTH, len(fod.match_key))
 
     def test_is_cryptographically_verifiable(self):
         fod = FodId.from_base64(
@@ -271,7 +290,7 @@ class FodIdTests(unittest.TestCase):
         fod1 = FodId.from_base64(
             self.factory.signed_owid_base64(canonical_payload()))
         fod2 = FodId.from_base64(fod1.as_base64())
-        self.assertEqual(fod1.flags, fod2.flags)
+        self.assertEqual(fod1._flags, fod2._flags)
         self.assertEqual(fod1.license_id, fod2.license_id)
         self.assertEqual(fod1.match_key, fod2.match_key)
         self.assertEqual(fod1.domain, fod2.domain)
@@ -285,9 +304,36 @@ class FodIdTests(unittest.TestCase):
 
     def _type_for(self, flags):
         payload = canonical_payload()
-        payload[FodId.FLAGS_OFFSET] = flags
+        payload[FLAGS_OFFSET] = flags
         return FodId.from_base64(
             self.factory.signed_owid_base64(payload)).type
+
+    def test_usage_is_the_highest_granted(self):
+        """The usage is the highest granted, because the bits are
+        cumulative. A mask for the non-marketing bit alone would say yes
+        for every marketing identifier, which is the wrong answer for a
+        data protection decision."""
+        cases = [
+            (0b000, Usage.NONE, None),
+            (0b001, Usage.NON_MARKETING, "non-marketing"),
+            (0b011, Usage.STANDARD, "standard"),
+            (0b111, Usage.PERSONALIZED, "personalized"),
+        ]
+        for bits, expected, id_usage in cases:
+            payload = canonical_random_payload()
+            payload[FLAGS_OFFSET] = (1 << 6) | bits
+            fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
+            self.assertEqual(expected, fod.usage, "usage bits %s" % bin(bits))
+            self.assertEqual(id_usage, fod.usage.id_usage)
+            self.assertEqual(IdType.RANDOM, fod.type)
+            self.assertFalse(fod.usage_from_consent)
+
+    def test_usage_from_consent_is_bit_three(self):
+        payload = canonical_random_payload()
+        payload[FLAGS_OFFSET] = (1 << 6) | 0b1011
+        fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
+        self.assertTrue(fod.usage_from_consent)
+        self.assertEqual(Usage.STANDARD, fod.usage)
 
     def test_type_random_when_bits_01(self):
         fod = FodId.from_base64(
@@ -298,34 +344,34 @@ class FodIdTests(unittest.TestCase):
         fod = FodId.from_base64(
             self.factory.signed_owid_base64(canonical_random_payload()))
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
-        self.assertEqual(FodId.GUID_LENGTH, len(fod.match_key))
-        self.assertEqual(bytes((0x40 + i) for i in range(FodId.GUID_LENGTH)),
+        self.assertEqual(GUID_LENGTH, len(fod.match_key))
+        self.assertEqual(bytes((0x40 + i) for i in range(GUID_LENGTH)),
                          fod.match_key)
 
     def test_random_payload_one_byte_short_raises(self):
-        payload = canonical_random_payload()[:FodId.RANDOM_PAYLOAD_LENGTH - 1]
+        payload = canonical_random_payload()[:RANDOM_PAYLOAD_LENGTH - 1]
         base64 = self.factory.signed_owid_base64(payload)
         with self.assertRaises(ValueError):
             FodId.from_base64(base64)
 
     def test_random_payload_larger_than_spec_uses_first_16_value_bytes(self):
-        payload = bytearray(FodId.PAYLOAD_LENGTH)
-        payload[0:FodId.RANDOM_PAYLOAD_LENGTH] = canonical_random_payload()
-        for i in range(FodId.RANDOM_PAYLOAD_LENGTH, len(payload)):
+        payload = bytearray(PAYLOAD_LENGTH)
+        payload[0:RANDOM_PAYLOAD_LENGTH] = canonical_random_payload()
+        for i in range(RANDOM_PAYLOAD_LENGTH, len(payload)):
             payload[i] = 0xCC
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(IdType.RANDOM, fod.type)
-        self.assertEqual(FodId.GUID_LENGTH, len(fod.match_key))
+        self.assertEqual(GUID_LENGTH, len(fod.match_key))
 
     def test_hashed_email_payload_one_byte_short_raises(self):
-        payload = canonical_payload()[:FodId.PAYLOAD_LENGTH - 1]
+        payload = canonical_payload()[:PAYLOAD_LENGTH - 1]
         base64 = self.factory.signed_owid_base64(payload)
         with self.assertRaises(ValueError):
             FodId.from_base64(base64)
 
     def test_reserved_header_only_parses(self):
-        payload = bytearray(FodId.MATCH_KEY_OFFSET)
-        payload[FodId.FLAGS_OFFSET] = 0b1100_0000
+        payload = bytearray(MATCH_KEY_OFFSET)
+        payload[FLAGS_OFFSET] = 0b1100_0000
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(IdType.RESERVED, fod.type)
         self.assertEqual(0, len(fod.match_key))
@@ -358,7 +404,7 @@ class FodIdTests(unittest.TestCase):
         raw = bytearray(self.factory.signed_bytes(canonical_payload()))
         raw[-1] ^= 0xFF  # corrupt the signature
         fod = FodId.from_byte_array(bytes(raw))
-        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_FLAGS, fod._flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
         self.assertFalse(fod.verify(self.factory.public_pem))
@@ -371,11 +417,11 @@ class FodIdTests(unittest.TestCase):
         owid = self.factory.signed_owid(canonical_payload())
         fod = FodId.from_owid(owid)
         with self.assertRaises(AttributeError):
-            owid.payload = bytes(FodId.PAYLOAD_LENGTH)
+            owid.payload = bytes(PAYLOAD_LENGTH)
         with self.assertRaises(AttributeError):
             owid.signature = bytes(64)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
-        self.assertEqual(0x20, fod.payload[FodId.MATCH_KEY_OFFSET])
+        self.assertEqual(0x20, fod.payload[MATCH_KEY_OFFSET])
 
     def test_constructor_reads_the_envelope_back_through_the_parser(self):
         # The envelope handed in is written out and read back, so the FodId
@@ -383,7 +429,7 @@ class FodIdTests(unittest.TestCase):
         owid = self.factory.signed_owid(canonical_payload())
         fod = FodId(owid)
         self.assertEqual(owid.as_byte_array(), fod.as_byte_array())
-        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_FLAGS, fod._flags)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
 
     def test_verify_with_wrong_key_returns_false(self):
@@ -398,7 +444,7 @@ class FodIdTests(unittest.TestCase):
         fod1 = FodId.from_base64(
             self.factory.signed_owid_base64(canonical_payload()))
         fod2 = FodId.from_byte_array(fod1.as_byte_array())
-        self.assertEqual(fod1.flags, fod2.flags)
+        self.assertEqual(fod1._flags, fod2._flags)
         self.assertEqual(fod1.license_id, fod2.license_id)
         self.assertEqual(fod1.match_key, fod2.match_key)
         self.assertEqual(fod1.domain, fod2.domain)
@@ -435,7 +481,7 @@ class FodIdTryParseTests(unittest.TestCase):
         self.assertIs(status, result.status)
 
     def assert_canonical(self, fod):
-        self.assertEqual(CANONICAL_FLAGS, fod.flags)
+        self.assertEqual(CANONICAL_FLAGS, fod._flags)
         self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
         self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
 
@@ -495,7 +541,7 @@ class FodIdTryParseTests(unittest.TestCase):
         fod = self.assert_parsed(FodId.try_from_base64(
             self.factory.signed_owid_base64(payload)))
         self.assert_canonical(fod)
-        self.assertEqual(FodId.MATCH_KEY_LENGTH, len(fod.match_key))
+        self.assertEqual(MATCH_KEY_LENGTH, len(fod.match_key))
         self.assertEqual(payload, fod.payload)
 
     def test_far_longer_payload_is_not_rejected_for_its_length(self):
@@ -509,11 +555,11 @@ class FodIdTryParseTests(unittest.TestCase):
         fod = self.assert_parsed(FodId.try_from_base64(
             self.factory.signed_owid_base64(canonical_random_payload())))
         self.assertEqual(IdType.RANDOM, fod.type)
-        self.assertEqual(FodId.GUID_LENGTH, len(fod.match_key))
+        self.assertEqual(GUID_LENGTH, len(fod.match_key))
 
     def test_reserved_header_only_parses_best_effort(self):
-        payload = bytearray(FodId.HEADER_LENGTH)
-        payload[FodId.FLAGS_OFFSET] = 0b1100_0000
+        payload = bytearray(HEADER_LENGTH)
+        payload[FLAGS_OFFSET] = 0b1100_0000
         fod = self.assert_parsed(FodId.try_from_base64(
             self.factory.signed_owid_base64(payload)))
         self.assertEqual(IdType.RESERVED, fod.type)
@@ -529,7 +575,7 @@ class FodIdTryParseTests(unittest.TestCase):
     # ----- The two 51Did payload rules -----
 
     def test_short_random_payload_reports_invalid_type_payload_length(self):
-        payload = canonical_random_payload()[:FodId.RANDOM_PAYLOAD_LENGTH - 1]
+        payload = canonical_random_payload()[:RANDOM_PAYLOAD_LENGTH - 1]
         self.assert_failed(
             FodId.try_from_base64(self.factory.signed_owid_base64(payload)),
             FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH)
@@ -538,28 +584,28 @@ class FodIdTryParseTests(unittest.TestCase):
             FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH)
 
     def test_short_probabilistic_payload_reports_invalid_type_length(self):
-        payload = canonical_payload()[:FodId.PAYLOAD_LENGTH - 1]
-        payload[FodId.FLAGS_OFFSET] = 0b0000_0101
+        payload = canonical_payload()[:PAYLOAD_LENGTH - 1]
+        payload[FLAGS_OFFSET] = 0b0000_0101
         self.assert_failed(
             FodId.try_from_base64(self.factory.signed_owid_base64(payload)),
             FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH)
 
     def test_short_hashed_email_payload_reports_invalid_type_length(self):
-        payload = canonical_payload()[:FodId.PAYLOAD_LENGTH - 1]
+        payload = canonical_payload()[:PAYLOAD_LENGTH - 1]
         self.assertEqual(IdType.HASHED_EMAIL,
-                         IdType.from_flags(payload[FodId.FLAGS_OFFSET]))
+                         IdType.from_flags(payload[FLAGS_OFFSET]))
         self.assert_failed(
             FodId.try_from_base64(self.factory.signed_owid_base64(payload)),
             FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH)
 
     def test_header_only_random_payload_reports_invalid_type_length(self):
-        payload = canonical_random_payload()[:FodId.HEADER_LENGTH]
+        payload = canonical_random_payload()[:HEADER_LENGTH]
         self.assert_failed(
             FodId.try_from_base64(self.factory.signed_owid_base64(payload)),
             FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH)
 
     def test_payload_shorter_than_the_header_reports_payload_too_short(self):
-        for length in range(FodId.HEADER_LENGTH):
+        for length in range(HEADER_LENGTH):
             payload = bytes([CANONICAL_FLAGS] * length)
             self.assert_failed(
                 FodId.try_from_base64(
@@ -705,7 +751,7 @@ class FodIdTryParseTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             FodId.from_byte_array("AwB=")
         short = self.factory.signed_owid_base64(
-            canonical_random_payload()[:FodId.RANDOM_PAYLOAD_LENGTH - 1])
+            canonical_random_payload()[:RANDOM_PAYLOAD_LENGTH - 1])
         with self.assertRaises(ValueError) as raised:
             FodId.from_base64(short)
         self.assertIn("RANDOM", str(raised.exception))

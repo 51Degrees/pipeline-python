@@ -25,8 +25,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 from typing import NamedTuple, Optional, Tuple
-import warnings
 
+from ._layout import (
+    FLAGS_OFFSET,
+    GUID_LENGTH,
+    HEADER_LENGTH,
+    LICENSE_ID_LENGTH,
+    LICENSE_ID_OFFSET,
+    MATCH_KEY_LENGTH,
+    MATCH_KEY_OFFSET,
+)
 from ._owid import (
     Owid,
     OwidError,
@@ -37,10 +45,12 @@ from ._owid import (
 )
 
 from .id_type import IdType
+from .usage import Usage
 
 #: The moment the envelope's date field counts minutes from, being the OWID
-#: epoch of 2020-01-01T00:00:00Z. :attr:`FodId.date_minutes` is the unsigned
-#: 32-bit count of minutes since this moment.
+#: epoch of 2020-01-01T00:00:00Z. The envelope carries an unsigned 32-bit
+#: count of minutes since this moment, and :attr:`FodId.date` is that count
+#: read as an aware UTC datetime.
 DATE_EPOCH = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
 
@@ -154,10 +164,19 @@ class FodId:
     the same inputs share the same match key even though their envelopes
     differ. *Compare match keys, never envelopes.*
 
-    Payload layout. The header (offsets 0-4) is shared by every identifier
-    type; bits 6-7 of Flags select the :class:`IdType` and the length of the
-    match key that follows (32-byte SHA-256 for Probabilistic and
-    HashedEmail, or 16 GUID bytes for Random). A payload longer than the
+    Payload layout. Every field has a typed accessor here, being
+    :attr:`type`, :attr:`usage`, :attr:`usage_from_consent`,
+    :attr:`license_id` and :attr:`match_key`, and those accessors are the
+    supported way to read an identifier. The bytes and offsets behind them
+    are specified at
+    https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
+    and the surface this class offers, which is the same in every 51Did
+    package, at
+    https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
+    which are the authority for both. In short, the header is shared by
+    every identifier type and the type then fixes the length of the match
+    key that follows, being a 32-byte SHA-256 for Probabilistic and
+    HashedEmail or 16 GUID bytes for Random. A payload longer than the
     header and match key is accepted, because the bytes after the match key
     are a creator context section whose lengths belong to the cloud, so
     this package places no upper bound on a payload or an envelope.
@@ -173,37 +192,6 @@ class FodId:
     This type **composes** an OWID (holds the wrapped envelope and delegates
     OWID-level concerns to it) rather than inheriting from it.
     """
-
-    #: Byte offset of the Flags field within the payload.
-    FLAGS_OFFSET = 0
-    #: Byte offset of the License Id field within the payload.
-    LICENSE_ID_OFFSET = 1
-    #: Byte length of the License Id field.
-    LICENSE_ID_LENGTH = 4
-    #: Byte offset of the match key field within the payload.
-    MATCH_KEY_OFFSET = 5
-    #: Byte length of the match key field (SHA-256).
-    MATCH_KEY_LENGTH = 32
-    #: Byte length of the header (Flags + License Id) common to every type.
-    HEADER_LENGTH = MATCH_KEY_OFFSET
-    #: Byte length of the GUID match key carried by Random identifiers.
-    GUID_LENGTH = 16
-    #: Minimum byte length of a Random 51Did payload.
-    RANDOM_PAYLOAD_LENGTH = HEADER_LENGTH + GUID_LENGTH
-    #: Minimum byte length of a Probabilistic or HashedEmail 51Did payload.
-    PAYLOAD_LENGTH = MATCH_KEY_OFFSET + MATCH_KEY_LENGTH
-    #: Deprecated alias for :attr:`MATCH_KEY_OFFSET`. The stable,
-    #: comparable part of a 51Did is now called the match key, mirroring
-    #: the Model Terms for Marketing vocabulary. A class constant cannot
-    #: warn when it is read, so this alias holds the same value and will
-    #: be removed in a future release.
-    HASH_OFFSET = MATCH_KEY_OFFSET
-    #: Deprecated alias for :attr:`MATCH_KEY_LENGTH`. The stable,
-    #: comparable part of a 51Did is now called the match key, mirroring
-    #: the Model Terms for Marketing vocabulary. A class constant cannot
-    #: warn when it is read, so this alias holds the same value and will
-    #: be removed in a future release.
-    HASH_LENGTH = MATCH_KEY_LENGTH
 
     def __init__(self, owid: Owid) -> None:
         """Promotes an already-parsed :class:`~fiftyone_pipeline_did.Owid`
@@ -378,14 +366,25 @@ class FodId:
         return cls(owid)
 
     @property
-    def flags(self) -> int:
-        """The 1-byte usage flags bit-mask from the payload (0-255)."""
-        return self._flags
+    def type(self) -> IdType:
+        """The identifier type, being Probabilistic, Random, HashedEmail or
+        Reserved. See :class:`~fiftyone_pipeline_did.IdType`."""
+        return IdType.from_flags(self._flags)
 
     @property
-    def type(self) -> IdType:
-        """The identifier type carried in bits 6-7 of :attr:`flags`."""
-        return IdType.from_flags(self._flags)
+    def usage(self) -> Usage:
+        """The usage the identifier was created for, as the highest usage
+        granted. See :class:`~fiftyone_pipeline_did.Usage` for why it is
+        read that way and for what each usage allows."""
+        return Usage.from_flags(self._flags)
+
+    @property
+    def usage_from_consent(self) -> bool:
+        """Whether the usage was derived from an IAB consent string the
+        caller sent, rather than stated by the caller directly. Both are
+        legitimate ways to arrive at a usage, and this says nothing about
+        which usage it is."""
+        return (self._flags & 0b1000) != 0
 
     @property
     def license_id(self) -> int:
@@ -413,22 +412,6 @@ class FodId:
         return self._match_key
 
     @property
-    def hash(self) -> bytes:
-        """Deprecated alias for :attr:`match_key`.
-
-        The stable, comparable part of a 51Did is now called the match key,
-        mirroring the Model Terms for Marketing vocabulary. Reading this
-        property warns with :class:`DeprecationWarning` and returns the
-        same bytes as :attr:`match_key`. The alias will be removed in a
-        future release.
-        """
-        warnings.warn(
-            "FodId.hash is renamed to FodId.match_key. This alias will be "
-            "removed in a future release.",
-            DeprecationWarning, stacklevel=2)
-        return self._match_key
-
-    @property
     def version(self) -> Version:
         """The OWID version."""
         return self._owid.version
@@ -442,17 +425,6 @@ class FodId:
     def date(self) -> datetime:
         """The OWID creation date, as an aware UTC datetime."""
         return self._owid.date
-
-    @property
-    def date_minutes(self) -> int:
-        """The envelope's own date as the unsigned 32-bit count of minutes
-        since :data:`DATE_EPOCH` (2020-01-01T00:00:00Z).
-
-        This is the value the envelope carries on the wire and the value the
-        OWID ``public-key?date=`` parameter takes, so a caller comparing
-        creation times gets the integer rather than a converted date.
-        """
-        return int((self._owid.date - DATE_EPOCH).total_seconds() // 60)
 
     @property
     def payload(self) -> bytes:
@@ -513,6 +485,17 @@ def _read_base64(value) -> ParseResult:
     return Owid.parse(value)
 
 
+def _date_minutes(fod_id: "FodId") -> int:
+    """The envelope's date as the unsigned 32-bit count of minutes since
+    :data:`DATE_EPOCH`, which is the form the envelope carries on the wire.
+
+    Private to this package. :attr:`FodId.date` is the supported way to
+    read the creation moment, and the client uses this count only where it
+    needs the same whole minute the envelope holds.
+    """
+    return int((fod_id.date - DATE_EPOCH).total_seconds() // 60)
+
+
 def _read_payload(payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes]:
     """Applies the two 51Did payload rules and unpacks the three fields.
 
@@ -526,25 +509,23 @@ def _read_payload(payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes]:
     Returns the status and, on success, the flags, the licence id and the
     match key bytes. On failure the three fields are zero and empty.
     """
-    if payload is None or len(payload) < FodId.HEADER_LENGTH:
+    if payload is None or len(payload) < HEADER_LENGTH:
         return FodIdParseStatus.PAYLOAD_TOO_SHORT, 0, 0, b""
-    flags = payload[FodId.FLAGS_OFFSET]
+    flags = payload[FLAGS_OFFSET]
     match_key_length = _match_key_length(IdType.from_flags(flags), payload)
-    if len(payload) < FodId.HEADER_LENGTH + match_key_length:
+    if len(payload) < HEADER_LENGTH + match_key_length:
         return FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH, 0, 0, b""
     # Little-endian uint32, unsigned (Python ints are unbounded and
     # non-negative here, so the high bit never becomes negative).
     license_id = int.from_bytes(
-        payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET
-                + FodId.LICENSE_ID_LENGTH],
+        payload[LICENSE_ID_OFFSET:LICENSE_ID_OFFSET + LICENSE_ID_LENGTH],
         byteorder="little",
         signed=False,
     )
     # bytes is immutable, so slicing yields a match key that cannot be used
     # to change the underlying payload and no defensive copy is required.
     match_key = bytes(
-        payload[FodId.MATCH_KEY_OFFSET:
-                FodId.MATCH_KEY_OFFSET + match_key_length])
+        payload[MATCH_KEY_OFFSET:MATCH_KEY_OFFSET + match_key_length])
     return FodIdParseStatus.PARSED, flags, license_id, match_key
 
 
@@ -560,10 +541,10 @@ def _unpack_or_raise(payload: bytes) -> Tuple[int, int, bytes]:
 def _match_key_length(id_type: IdType, payload: bytes) -> int:
     """How many match key bytes the type needs after the header."""
     if id_type is IdType.RANDOM:
-        return FodId.GUID_LENGTH
+        return GUID_LENGTH
     if id_type is IdType.RESERVED:
-        return len(payload) - FodId.HEADER_LENGTH
-    return FodId.MATCH_KEY_LENGTH
+        return len(payload) - HEADER_LENGTH
+    return MATCH_KEY_LENGTH
 
 
 def _payload_message(status: FodIdParseStatus, payload: bytes) -> str:
@@ -571,10 +552,10 @@ def _payload_message(status: FodIdParseStatus, payload: bytes) -> str:
     length = 0 if payload is None else len(payload)
     if status is FodIdParseStatus.PAYLOAD_TOO_SHORT:
         return "51Did payload must be at least {0} bytes; got {1}.".format(
-            FodId.HEADER_LENGTH, length)
-    id_type = IdType.from_flags(payload[FodId.FLAGS_OFFSET])
+            HEADER_LENGTH, length)
+    id_type = IdType.from_flags(payload[FLAGS_OFFSET])
     return ("51Did payload for the {0} type must be at least {1} bytes; "
             "got {2}.".format(
                 id_type.name,
-                FodId.HEADER_LENGTH + _match_key_length(id_type, payload),
+                HEADER_LENGTH + _match_key_length(id_type, payload),
                 length))

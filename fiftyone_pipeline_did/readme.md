@@ -20,21 +20,28 @@ envelopes.**
 
 ## Payload layout
 
-| Offset | Length | Field      | Type                                            |
-|-------:|-------:|------------|-------------------------------------------------|
-|      0 |      1 | Flags      | uint8: bits 0-2 usage, bits 6-7 identifier type |
-|      1 |      4 | LicenseId  | uint32 (little-endian)                          |
-|      5 |  16/32 | Match key  | SHA-256 (Probabilistic, HashedEmail) or GUID (Random) |
+The bytes a 51Did payload holds, and what each bit of them means, are
+specified once for every language in
+[identifier-layout.md](https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md),
+and the surface each package offers over those bytes in
+[package-surface.md](https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md).
+Those two pages are the authority, so read them rather than this summary
+where the two ever disagree.
 
-| Bits 7-6 | `IdType`        | Match key length | Minimum payload |
-|---------:|-----------------|-----------------:|----------------:|
-|     `00` | `PROBABILISTIC` |           32 |              37 |
-|     `01` | `RANDOM`        |           16 |              21 |
-|     `10` | `HASHED_EMAIL`  |           32 |              37 |
-|     `11` | `RESERVED`      |    remainder |               5 |
+In short, the payload opens with a header carrying the flags byte and the
+License Id, and the identifier type in that byte then fixes the length of
+the match key that follows, being 32 bytes for `PROBABILISTIC` and
+`HASHED_EMAIL`, 16 for `RANDOM`, and whatever remains for `RESERVED`.
+Identifiers issued before the type tag existed decode as `PROBABILISTIC`.
 
-Identifiers issued before the type tag existed have bits 6-7 zeroed and decode
-as `PROBABILISTIC`.
+This package does not publish the offsets or the raw flags byte, and it
+does not need to, because every field has a typed accessor that reads it
+correctly. The usage is the clearest reason why, as its bits are
+cumulative rather than exclusive, so a caller masking the byte for the
+non-marketing bit alone reads every marketing identifier as non-marketing,
+which is exactly backwards for a rule that says a non-marketing identifier
+must never be passed to a demand source. `fod_id.usage` answers with the
+highest usage granted and that mistake cannot be made.
 
 ## OWID dependency
 
@@ -76,18 +83,20 @@ way to hold an unsigned or partly built envelope.
 ## Usage
 
 ```python
-from fiftyone_pipeline_did import FodId, IdType
+from fiftyone_pipeline_did import FodId, IdType, Usage
 
 fod_id = FodId.from_base64(base64_from_cloud_service)   # either alphabet
 
-flags = fod_id.flags
 type_ = fod_id.type          # IdType.PROBABILISTIC / RANDOM / HASHED_EMAIL
+usage = fod_id.usage         # Usage.NON_MARKETING / STANDARD / PERSONALIZED
+from_consent = fod_id.usage_from_consent  # True when read from a consent
+                                          # string the caller sent
 license_id = fod_id.license_id
 match_key = fod_id.match_key  # SHA-256 or GUID bytes, see type
 
 # Delegated OWID-level fields and operations.
 domain = fod_id.domain
-minutes = fod_id.date_minutes    # the date field: minutes since 2020-01-01Z
+created = fod_id.date            # aware UTC datetime, to the minute
 verified = fod_id.verify(public_key_pem)
 base64 = fod_id.as_base64()      # standard alphabet, padded, as the cloud
 url_safe = fod_id.as_base64_url()  # URL-safe alphabet, no padding, for a link
@@ -100,16 +109,37 @@ encrypted value that only 51Degrees can turn back into a licence
 identifier, so `license_id` is the field's raw value and identifies
 nothing outside 51Degrees.
 
-`fod_id.hash` remains as a deprecated alias of `match_key`. Reading the
-alias returns the same bytes and warns with `DeprecationWarning`, and the
-alias will be removed in a future release, so move callers to `match_key`.
+### The usage an identifier was created for
 
-The class constants naming the match key field follow the same
-vocabulary, being `FodId.MATCH_KEY_OFFSET` and `FodId.MATCH_KEY_LENGTH`.
-`FodId.HASH_OFFSET` and `FodId.HASH_LENGTH` remain as deprecated aliases
-holding the same values, and a class constant cannot warn when it is
-read, so move callers to the new names before the aliases are removed in
-a future release.
+`fod_id.usage` says what the identifier may be used for, as a `Usage`
+carrying `NON_MARKETING`, `STANDARD` or `PERSONALIZED`, and `NONE` for an
+identifier with no usage bit set, which the cloud never issues. It decides
+where the identifier may go, because one created for non-marketing must
+never be passed to a demand source, and one created for standard or
+personalized marketing may be passed only to a recipient that has accepted
+the applicable terms. `usage.id_usage` gives the cloud's own `id.usage`
+wording, being `non-marketing`, `standard` or `personalized`, and `None`
+for `NONE`.
+
+The three usages are cumulative in the bits that carry them, so every
+marketing identifier also carries the non-marketing bit. `fod_id.usage`
+answers with the highest usage granted, which is why it is the only
+supported way to read the usage and why the package does not hand out the
+byte. `fod_id.usage_from_consent` says whether the usage was worked out
+from an IAB consent string the caller sent rather than stated by the
+caller directly. Both are legitimate ways to arrive at a usage and it says
+nothing about which usage was reached.
+
+The raw flags byte, the byte layout constants and the old `hash` names are
+not part of this package. `fod_id.flags`, `fod_id.hash`,
+`fod_id.date_minutes`, `FodId.MATCH_KEY_OFFSET` and every other offset and
+length were removed, in this package and in the .NET, Java, Node, PHP and
+Rust ones together, so the surface stays the same in every language. Read
+`type`, `usage`, `usage_from_consent`, `license_id`, `match_key` and `date`
+instead, which read the same bytes and cannot get the cumulative usage bits
+wrong. The layout is still specified, in
+[identifier-layout.md](https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md),
+for anyone implementing a reader rather than using one.
 
 ## Parsing without exceptions
 
@@ -178,7 +208,7 @@ same whichever language parsed the bytes.
 The payload must hold the 5 byte header before the type can be read, and
 the type then says how many match key bytes must follow, being 16 for
 `RANDOM` and 32 for `PROBABILISTIC` and `HASHED_EMAIL`, as the payload
-layout table above shows. `RESERVED` keeps the best-effort reading, being
+layout specification says. `RESERVED` keeps the best-effort reading, being
 the header fields and whatever bytes follow. Anything beyond the match key
 is a creator context section whose lengths belong to the cloud, so a
 longer payload, a longer creator domain (a self-hosted container may sign
