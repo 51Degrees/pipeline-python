@@ -1121,11 +1121,37 @@ class TermsTests(unittest.TestCase):
         self.assertEqual("https://m4ow.uk/mtm/2.txt",
                          Terms.MODEL_TERMS_FOR_MARKETING_2.url)
 
-    def test_every_member_answers_the_address_question(self):
-        # A member added without an address entry would raise here rather
-        # than at the caller.
+    def test_every_member_agrees_with_the_table(self):
+        # Each member carries its own index and address, and the index to
+        # member map is built from the members, so this fails if a member
+        # does not read back from its own index or if one that names a
+        # document was added without an address.
         for member in Terms:
-            self.assertIn(member.url, (None, MODEL_TERMS_URL))
+            if member is Terms.UNKNOWN:
+                # Stands for every index the table does not carry, so it
+                # has no index of its own and no address.
+                self.assertEqual(-1, member.index)
+                self.assertIsNone(member.url)
+                continue
+            self.assertIs(
+                member, Terms.from_index(member.index),
+                "{0} does not read back from its own index".format(member))
+            if member is Terms.NOT_STATED:
+                # Names no document, so it has no address.
+                self.assertEqual(0, member.index)
+                self.assertIsNone(member.url)
+            else:
+                self.assertIsNotNone(
+                    member.url,
+                    "{0} names a document with no address".format(member))
+                self.assertTrue(member.url.startswith("https://"))
+
+    def test_no_two_members_share_an_index(self):
+        # One index stands for one document, so which document an
+        # identifier was created under never depends on the order the
+        # members happen to be written in.
+        indexes = [m.index for m in Terms if m.index >= 0]
+        self.assertEqual(len(indexes), len(set(indexes)))
 
     def test_the_named_value_is_not_part_of_the_package_surface(self):
         # The address on FodId is the whole of what a caller reads, so the
