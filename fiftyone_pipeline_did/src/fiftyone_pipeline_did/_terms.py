@@ -54,9 +54,14 @@ class Terms(Enum):
 
     The members carry a name and not the index, because :attr:`UNKNOWN`
     stands for any index this package does not know and so has no single
-    index to carry. Where a caller needs the index itself, for instance to
-    report which one it could not read, it reads
-    :attr:`~fiftyone_pipeline_did.FodId.terms_index`.
+    index to carry.
+
+    This module is private to the package, as its underscore name says. The
+    package turns the index into the address that
+    :attr:`~fiftyone_pipeline_did.FodId.terms` answers with, so a caller
+    never handles the byte, and the names here are the ones the
+    specification gives so that every package describes one document the
+    same way.
 
     The Usage and the Terms answer different questions and a receiver needs
     both, because the Usage says where an identifier may go and the Terms

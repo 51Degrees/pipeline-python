@@ -35,6 +35,7 @@ from ._layout import (
     LICENSE_ID_OFFSET,
     MATCH_KEY_LENGTH,
     MATCH_KEY_OFFSET,
+    SUPPORTED_PAYLOAD_VERSION,
     TERMS_LENGTH,
 )
 from ._owid import (
@@ -47,7 +48,7 @@ from ._owid import (
 )
 
 from .id_type import IdType
-from .terms import Terms
+from ._terms import Terms
 from .usage import Usage
 
 #: The moment the envelope's date field counts minutes from, being the OWID
@@ -116,6 +117,12 @@ class FodIdParseStatus(Enum):
     #: the header for Random and a 32 byte SHA-256 match key for
     #: Probabilistic and HashedEmail.
     INVALID_TYPE_PAYLOAD_LENGTH = "InvalidTypePayloadLength"
+    #: Bits 4 and 5 of the flags byte name a payload layout version this
+    #: package does not know, so no field is read. A later version exists
+    #: precisely because a field moved, so reading the payload under the
+    #: layout this package knows would answer with values that are wrong
+    #: rather than absent.
+    UNSUPPORTED_PAYLOAD_VERSION = "UnsupportedPayloadVersion"
 
     @classmethod
     def of(cls, status: ParseStatus) -> "FodIdParseStatus":
@@ -169,9 +176,8 @@ class FodId:
 
     Payload layout. Every field has a typed accessor here, being
     :attr:`type`, :attr:`usage`, :attr:`usage_from_consent`,
-    :attr:`license_id`, :attr:`match_key`, :attr:`terms`,
-    :attr:`terms_index` and :attr:`terms_url`, and those accessors are the
-    supported way to read an identifier. The bytes and offsets behind them
+    :attr:`license_id`, :attr:`match_key` and :attr:`terms`, and those
+    accessors are the supported way to read an identifier. The bytes and offsets behind them
     are specified at
     https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
     and the surface this class offers, which is the same in every 51Did
@@ -186,6 +192,15 @@ class FodId:
     the cloud, so this package places no upper bound on a payload or an
     envelope. A payload that ends at the match key reads as terms that are
     not stated.
+
+    Bits 4 and 5 of the flags byte say which payload layout the identifier
+    follows, and this package reads version 0. A payload naming any other
+    version is refused with
+    :attr:`FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION` rather than read
+    under the layout this package knows, because a later version exists
+    precisely because a field moved, so reading one here would answer with
+    values that are wrong rather than absent. The version is not exposed,
+    because a caller has nothing to decide with it.
 
     Reading and verifying are separate steps. :meth:`try_from_base64` and
     :meth:`try_from_byte_array` read external data without raising and
@@ -420,42 +435,32 @@ class FodId:
         return self._match_key
 
     @property
-    def terms(self) -> Terms:
-        """The terms document the identifier was created under, so the
-        terms travel with the identifier instead of alongside it. See
-        :class:`~fiftyone_pipeline_did.Terms`, which sets out why terms
-        that are not stated and terms this package cannot name are
-        different answers and must never be read as the same one."""
-        return Terms.from_index(self._terms_index)
+    def terms(self) -> Optional[str]:
+        """The address of the terms document the identifier was created
+        under, so the terms travel with the identifier instead of
+        alongside it.
 
-    @property
-    def terms_index(self) -> int:
-        """The raw value of the Terms byte (0 to 255), being the index into
-        the table of terms documents in the specification.
+        The byte after the match key is an index into a table in the
+        specification and this package turns the index into the address,
+        so a caller never handles the byte. The address is answered and
+        never fetched, because what to do with the document is the
+        receiver's decision.
 
-        A payload that ends at the match key reads as 0, which says the
-        terms are not stated in the identifier, so absence and zero mean
-        the same thing. The index is exposed because a caller will meet one
-        added after this package was released, and it can then name which
-        index it could not read, or look the document up by hand, neither
-        of which :attr:`terms` alone allows.
+        ``None`` covers both an index of zero, which says the terms are
+        not stated in the identifier, and an index added to the table
+        after this package was released, which it cannot name. A caller
+        cannot tell those two apart, which is deliberate, because both
+        lead to the same place, being that the identifier does not say
+        which terms it was created under and the answer has to come from
+        somewhere else. No address is ever built from an index this
+        package does not know, since that would name a document nobody
+        wrote.
+
+        No address does not mean the identifier is unrestricted. Where an
+        identifier may go is a separate question :attr:`usage` answers,
+        which still bars a non-marketing identifier from a demand source.
         """
-        return self._terms_index
-
-    @property
-    def terms_url(self) -> Optional[str]:
-        """The address of the terms document, and ``None`` where the terms
-        are not stated in the identifier or where the index is one this
-        package does not know.
-
-        The address is answered and never fetched, because what to do with
-        the document is the receiver's decision. ``None`` for an index this
-        package does not know says only that the document cannot be named
-        here, and never that there is no document, which is what
-        :attr:`terms` and :attr:`terms_index` are read together to tell
-        apart.
-        """
-        return self.terms.url
+        return Terms.from_index(self._terms_index).url
 
     @property
     def version(self) -> Version:
@@ -560,6 +565,14 @@ def _read_payload(
     if payload is None or len(payload) < HEADER_LENGTH:
         return FodIdParseStatus.PAYLOAD_TOO_SHORT, 0, 0, b"", 0
     flags = payload[FLAGS_OFFSET]
+    # The version is read before any field, because a later version exists
+    # precisely because a field moved. Reading a payload of a version this
+    # package does not know under the layout it does know would answer with
+    # values that are wrong rather than absent, which is worse than
+    # refusing, and a version that nothing checks protects nothing.
+    if _payload_version(flags) != SUPPORTED_PAYLOAD_VERSION:
+        return (
+            FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION, 0, 0, b"", 0)
     match_key_length = _match_key_length(IdType.from_flags(flags), payload)
     if len(payload) < HEADER_LENGTH + match_key_length:
         return FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH, 0, 0, b"", 0
@@ -607,6 +620,15 @@ def _unpack_or_raise(payload: bytes) -> Tuple[int, int, bytes, int]:
     return flags, license_id, match_key, terms_index
 
 
+def _payload_version(flags: int) -> int:
+    """Bits 4 and 5 of the flags byte, being the version of the payload
+    layout the identifier follows. The envelope carries a version of its
+    own at its first byte, which versions the envelope, whilst this one
+    versions the payload.
+    """
+    return (flags >> 4) & 0b11
+
+
 def _match_key_length(id_type: IdType, payload: bytes) -> int:
     """How many match key bytes the type needs after the header."""
     if id_type is IdType.RANDOM:
@@ -622,6 +644,10 @@ def _payload_message(status: FodIdParseStatus, payload: bytes) -> str:
     if status is FodIdParseStatus.PAYLOAD_TOO_SHORT:
         return "51Did payload must be at least {0} bytes; got {1}.".format(
             HEADER_LENGTH, length)
+    if status is FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION:
+        return (
+            "51Did payload version {0} is not one this package can "
+            "read.".format(_payload_version(payload[FLAGS_OFFSET])))
     id_type = IdType.from_flags(payload[FLAGS_OFFSET])
     return ("51Did payload for the {0} type must be at least {1} bytes; "
             "got {2}.".format(

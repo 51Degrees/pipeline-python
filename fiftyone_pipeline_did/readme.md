@@ -16,7 +16,8 @@ Identifier) returned by the 51Degrees Cloud service. Mirrors the .NET
   same inputs share the same match key even though their envelopes differ.
 - The **Terms** is the byte after the match key that says which terms
   document the identifier was created under, so the terms travel with the
-  identifier instead of alongside it.
+  identifier instead of alongside it. The package turns that byte into the
+  address of the document.
 
 **Comparing two 51Dids means comparing their match keys, never their
 envelopes.**
@@ -89,7 +90,7 @@ way to hold an unsigned or partly built envelope.
 ## Usage
 
 ```python
-from fiftyone_pipeline_did import FodId, IdType, Terms, Usage
+from fiftyone_pipeline_did import FodId, IdType, Usage
 
 fod_id = FodId.from_base64(base64_from_cloud_service)   # either alphabet
 
@@ -99,10 +100,9 @@ from_consent = fod_id.usage_from_consent  # True when read from a consent
                                           # string the caller sent
 license_id = fod_id.license_id
 match_key = fod_id.match_key  # SHA-256 or GUID bytes, see type
-terms = fod_id.terms          # Terms.NOT_STATED / UNKNOWN, or a named
-                              # document, MODEL_TERMS_FOR_MARKETING_2
-terms_index = fod_id.terms_index  # the raw byte, 0 to 255
-terms_url = fod_id.terms_url  # the address, or None where there is none
+terms = fod_id.terms          # address of the terms document it was
+                              # created under, None where it names none
+                              # this package knows
 
 # Delegated OWID-level fields and operations.
 domain = fod_id.domain
@@ -142,40 +142,62 @@ nothing about which usage was reached.
 
 ### The terms an identifier was created under
 
-`fod_id.terms` says which terms document the identifier was created under,
-as a `Terms`, so the terms travel with the identifier instead of alongside
-it and a receiver can tell which document was in force when the identifier
-was made. `fod_id.terms_url` gives the address of that document, and
-`fod_id.terms_index` gives the raw byte behind both, being an index into a
+`fod_id.terms` answers with the address of the terms document the
+identifier was created under, so the terms travel with the identifier
+instead of alongside it and a receiver can tell which document was in
+force when the identifier was made. The byte behind it is an index into a
 table of terms documents in the
-[layout specification](https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md).
-The byte is an index and not a version number, so that a later document
-can live at any address rather than only at one the specification could
-compose from a number, and an index is never reused or repointed once
-published, because an identifier issued under it has to stay readable
+[layout specification](https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md),
+and the package turns the index into the address so a caller never handles
+the byte. The byte is an index and not a version number, so that a later
+document can live at any address rather than only at one the specification
+could compose from a number, and an index is never reused or repointed
+once published, because an identifier issued under it has to stay readable
 years later.
 
-`Terms.NOT_STATED` and `Terms.UNKNOWN` are different answers and must
-never be read as the same one. `NOT_STATED` is index 0 and says this
-identifier does not carry the answer, so the answer has to come from
-somewhere else, being the Terms Document Locator in an OpenRTB request or
-whatever the surrounding protocol provides, and it does not mean the
-identifier is unrestricted. `UNKNOWN` says the identifier does state its
-terms and that this package cannot name them, because the index was added
-after the package was released. A caller meeting `UNKNOWN` should treat
-the identifier as covered by terms it cannot yet read, and either update
-the package or refuse the identifier, and `terms_index` is there so it can
-say which index it could not read.
+| Index | Document | `fod_id.terms` |
+|------:|----------|----------------|
+| `0` | Not stated in the identifier | `None` |
+| `1` | Model Terms for Marketing, version 2 | `https://m4ow.uk/mtm/2.txt` |
+| any other | One this package cannot name | `None` |
 
-`terms_url` is `None` for both of those, using absence rather than an
-empty string, and this package answers with the address and never fetches
-it, because what to do with the document is the receiver's decision.
+The answer is `None` where the identifier does not state its terms and
+where it states an index added after this package was released, using
+absence rather than an empty string. No address is ever built from an
+index this package cannot name, because that would name a document nobody
+wrote and a receiver would record having accepted terms that do not exist.
+A caller therefore cannot tell those two apart, which is deliberate, since
+both lead to the same place. This package answers with the address and
+never fetches it, because what to do with the document is the receiver's
+decision.
+
+No address does not mean the identifier is unrestricted. It says only that
+this identifier does not carry the answer, so the answer has to come from
+somewhere else, being the Terms Document Locator in an OpenRTB request or
+whatever the surrounding protocol provides.
 
 A payload with no byte after the match key reads as index 0, so absence
 and zero mean the same thing and no presence flag exists to tell them
 apart. The Usage and the Terms answer different questions and a
 receiver needs both, because the Usage says where an identifier may go and
 the Terms says under which document it was created.
+
+### The payload version
+
+Bits 4 and 5 of the flags byte say which payload layout the identifier
+follows, and this package reads version 0. A payload naming version 1, 2
+or 3 is refused with `FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION`, and
+the raising readers name the version they found in the message.
+
+No field is read under the layout this package knows once the version says
+otherwise. A later version exists precisely because a field moved, so
+reading such a payload here would answer with values that are wrong rather
+than absent, which is worse than refusing. A version that nothing checks
+protects nothing.
+
+The version is not exposed. Either this package read the layout, in which
+case the accessors are the answer, or it did not, in which case there is
+no identifier to read fields from.
 
 The raw flags byte, the byte layout constants and the old `hash` names are
 not part of this package. `fod_id.flags`, `fod_id.hash`,
@@ -583,7 +605,7 @@ is refreshed by common-ci's `update-example-assets` step.
 - **No signature verification on parsing.** A parsed 51Did is not known to
   be genuine. Call `verify(public_key_pem)`, `signature_status(public_key_pem)`
   or a `DidClient` check when needed.
-- **No fetching of a terms document.** `fod_id.terms_url` answers with the
+- **No fetching of a terms document.** `fod_id.terms` answers with the
   address and nothing more. What to do with the document is the receiver's
   decision.
 - **No upper bound on the size of an identifier.** The lengths beyond the

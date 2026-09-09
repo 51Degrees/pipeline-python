@@ -42,7 +42,8 @@ DOMAIN = "51degrees.com"
 # from the package, which does not publish it. The layout is
 # specified at
 # https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
-SAMPLE_FLAGS = 0b0000_0011      # standard usage, Probabilistic type
+SAMPLE_FLAGS = 0b0000_0011      # standard usage, payload version 0,
+                                # Probabilistic type
 SAMPLE_PAYLOAD_LENGTH = 38      # 1 flags byte, 4 licence id, 32 key,
                                 # 1 terms
 SAMPLE_MATCH_KEY_OFFSET = 5
@@ -89,11 +90,9 @@ def run():
     print("  Consent   :", fod_id.usage_from_consent)
     print("  LicenseId :", fod_id.license_id)
     print("  Match key :", fod_id.match_key.hex())
-    print("  Terms     :", fod_id.terms.name)
-    print("  Terms idx :", fod_id.terms_index)
     # The address is answered and never fetched. What to do with the
     # document is the receiver's decision.
-    print("  Terms url :", fod_id.terms_url)
+    print("  Terms     :", fod_id.terms)
     print("  Verifies  :", fod_id.verify(crypto.public_key_pem()))
 
     reissued = FodId.from_base64(issue(creator, payload))

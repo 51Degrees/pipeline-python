@@ -65,6 +65,10 @@ PAYLOAD_LENGTH = MATCH_KEY_OFFSET + MATCH_KEY_LENGTH
 #: offset constant for it, because the identifier type fixes the match key
 #: length and so the type says where the field starts.
 TERMS_LENGTH = 1
+#: The payload layout version this package reads, carried in bits 4 and 5
+#: of the flags byte. Any other version is refused rather than read under
+#: this layout.
+SUPPORTED_PAYLOAD_VERSION = 0
 #: The Terms index a payload with no byte after the match key reads as,
 #: being the index that says the terms are not stated in the identifier.
 #: Absence and zero mean the same thing and neither has to be told apart
