@@ -14,6 +14,9 @@ Identifier) returned by the 51Degrees Cloud service. Mirrors the .NET
   the Flags and License Id, being a 32-byte SHA-256 for Probabilistic and
   HashedEmail identifiers, or 16 GUID bytes for Random. Two 51Dids for the
   same inputs share the same match key even though their envelopes differ.
+- The **Terms** is the byte after the match key that says which terms
+  document the identifier was created under, so the terms travel with the
+  identifier instead of alongside it.
 
 **Comparing two 51Dids means comparing their match keys, never their
 envelopes.**
@@ -31,8 +34,11 @@ where the two ever disagree.
 In short, the payload opens with a header carrying the flags byte and the
 License Id, and the identifier type in that byte then fixes the length of
 the match key that follows, being 32 bytes for `PROBABILISTIC` and
-`HASHED_EMAIL`, 16 for `RANDOM`, and whatever remains for `RESERVED`.
-Identifiers issued before the type tag existed decode as `PROBABILISTIC`.
+`HASHED_EMAIL`, 16 for `RANDOM`, and whatever remains for `RESERVED`. The
+Terms byte follows the match key, and the bytes after it are a creator
+context section. Identifiers issued before the type tag existed decode as
+`PROBABILISTIC`, and identifiers issued before the Terms existed end at
+the match key and read as terms that are not stated.
 
 This package does not publish the offsets or the raw flags byte, and it
 does not need to, because every field has a typed accessor that reads it
@@ -83,7 +89,7 @@ way to hold an unsigned or partly built envelope.
 ## Usage
 
 ```python
-from fiftyone_pipeline_did import FodId, IdType, Usage
+from fiftyone_pipeline_did import FodId, IdType, Terms, Usage
 
 fod_id = FodId.from_base64(base64_from_cloud_service)   # either alphabet
 
@@ -93,6 +99,11 @@ from_consent = fod_id.usage_from_consent  # True when read from a consent
                                           # string the caller sent
 license_id = fod_id.license_id
 match_key = fod_id.match_key  # SHA-256 or GUID bytes, see type
+terms = fod_id.terms          # Terms.NOT_STATED / Terms.UNKNOWN, or a
+                              # named document, being
+                              # MODEL_TERMS_FOR_MARKETING_VERSION_2
+terms_index = fod_id.terms_index  # the raw byte, 0 to 255
+terms_url = fod_id.terms_url  # the address, or None where there is none
 
 # Delegated OWID-level fields and operations.
 domain = fod_id.domain
@@ -129,6 +140,44 @@ byte. `fod_id.usage_from_consent` says whether the usage was worked out
 from an IAB consent string the caller sent rather than stated by the
 caller directly. Both are legitimate ways to arrive at a usage and it says
 nothing about which usage was reached.
+
+### The terms an identifier was created under
+
+`fod_id.terms` says which terms document the identifier was created under,
+as a `Terms`, so the terms travel with the identifier instead of alongside
+it and a receiver can tell which document was in force when the identifier
+was made. `fod_id.terms_url` gives the address of that document, and
+`fod_id.terms_index` gives the raw byte behind both, being an index into a
+table of terms documents in the
+[layout specification](https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md).
+The byte is an index and not a version number, so that a later document
+can live at any address rather than only at one the specification could
+compose from a number, and an index is never reused or repointed once
+published, because an identifier issued under it has to stay readable
+years later.
+
+`Terms.NOT_STATED` and `Terms.UNKNOWN` are different answers and must
+never be read as the same one. `NOT_STATED` is index 0 and says this
+identifier does not carry the answer, so the answer has to come from
+somewhere else, being the Terms Document Locator in an OpenRTB request or
+whatever the surrounding protocol provides, and it does not mean the
+identifier is unrestricted. `UNKNOWN` says the identifier does state its
+terms and that this package cannot name them, because the index was added
+after the package was released. A caller meeting `UNKNOWN` should treat
+the identifier as covered by terms it cannot yet read, and either update
+the package or refuse the identifier, and `terms_index` is there so it can
+say which index it could not read.
+
+`terms_url` is `None` for both of those, using absence rather than an
+empty string, and this package answers with the address and never fetches
+it, because what to do with the document is the receiver's decision.
+
+An identifier issued before the Terms existed has a payload ending at the
+match key, and a payload with no byte after the match key reads as index
+0, so absence and zero mean the same thing and no presence flag exists to
+tell them apart. The Usage and the Terms answer different questions and a
+receiver needs both, because the Usage says where an identifier may go and
+the Terms says under which document it was created.
 
 The raw flags byte, the byte layout constants and the old `hash` names are
 not part of this package. `fod_id.flags`, `fod_id.hash`,
@@ -208,14 +257,17 @@ same whichever language parsed the bytes.
 The payload must hold the 5 byte header before the type can be read, and
 the type then says how many match key bytes must follow, being 16 for
 `RANDOM` and 32 for `PROBABILISTIC` and `HASHED_EMAIL`, as the payload
-layout specification says. `RESERVED` keeps the best-effort reading, being
-the header fields and whatever bytes follow. Anything beyond the match key
+layout specification says. The Terms byte follows the match key, and a
+payload ending at the match key reads as terms that are not stated.
+`RESERVED` keeps the best-effort reading, being the header fields and
+whatever bytes follow, and because no match key length is defined for it
+there is no byte left over to read as its Terms. Anything beyond the Terms
 is a creator context section whose lengths belong to the cloud, so a
 longer payload, a longer creator domain (a self-hosted container may sign
 with one) or a longer envelope is accepted and this package places no
 upper bound of its own on any of them. An older reader meeting a context
-section of a version it does not know still reads the header and the
-match key.
+section of a version it does not know still reads the header, the match
+key and the Terms.
 
 `DidClient` refuses text longer than 4096 characters before it parses
 it, fetches a key or calls the cloud. That figure is client policy,
@@ -533,9 +585,12 @@ is refreshed by common-ci's `update-example-assets` step.
 - **No signature verification on parsing.** A parsed 51Did is not known to
   be genuine. Call `verify(public_key_pem)`, `signature_status(public_key_pem)`
   or a `DidClient` check when needed.
+- **No fetching of a terms document.** `fod_id.terms_url` answers with the
+  address and nothing more. What to do with the document is the receiver's
+  decision.
 - **No upper bound on the size of an identifier.** The lengths beyond the
-  header and match key belong to the cloud. The 4096 character figure in
-  `DidClient` is client policy against obviously malformed text, not a
-  format limit.
+  header, match key and Terms belong to the cloud. The 4096 character
+  figure in `DidClient` is client policy against obviously malformed text,
+  not a format limit.
 - **No creation of new 51Dids.** This is a parser; new 51Dids are issued by the
   51Degrees cloud / on-premise hashing engines.

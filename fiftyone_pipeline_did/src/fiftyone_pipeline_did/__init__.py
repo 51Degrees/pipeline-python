@@ -27,7 +27,8 @@ Identifier) value.
 OWID form in either alphabet, exposes a typed accessor for every field it
 carries (the identifier :class:`~fiftyone_pipeline_did.id_type.IdType`, the
 :class:`~fiftyone_pipeline_did.usage.Usage` it was created for and whether
-that usage came from a consent string, the License Id and the match key),
+that usage came from a consent string, the License Id, the match key and
+the :class:`~fiftyone_pipeline_did.terms.Terms` it was created under),
 and delegates OWID-level concerns to the wrapped envelope. The raw bytes
 and offsets behind those accessors are not part of this surface, which is
 specified at
@@ -72,6 +73,7 @@ from .did_client import (
 from ._owid import Owid, OwidError, SignatureStatus
 from .fod_id import DATE_EPOCH, FodId, FodIdParseResult, FodIdParseStatus
 from .id_type import IdType
+from .terms import Terms
 from .usage import Usage
 
 __all__ = [
@@ -79,6 +81,7 @@ __all__ = [
     "FodIdParseResult",
     "FodIdParseStatus",
     "IdType",
+    "Terms",
     "Usage",
     "DATE_EPOCH",
     "DidClient",

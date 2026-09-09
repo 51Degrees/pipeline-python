@@ -27,6 +27,7 @@ from enum import Enum
 from typing import NamedTuple, Optional, Tuple
 
 from ._layout import (
+    ABSENT_TERMS_INDEX,
     FLAGS_OFFSET,
     GUID_LENGTH,
     HEADER_LENGTH,
@@ -34,6 +35,7 @@ from ._layout import (
     LICENSE_ID_OFFSET,
     MATCH_KEY_LENGTH,
     MATCH_KEY_OFFSET,
+    TERMS_LENGTH,
 )
 from ._owid import (
     Owid,
@@ -45,6 +47,7 @@ from ._owid import (
 )
 
 from .id_type import IdType
+from .terms import Terms
 from .usage import Usage
 
 #: The moment the envelope's date field counts minutes from, being the OWID
@@ -166,7 +169,8 @@ class FodId:
 
     Payload layout. Every field has a typed accessor here, being
     :attr:`type`, :attr:`usage`, :attr:`usage_from_consent`,
-    :attr:`license_id` and :attr:`match_key`, and those accessors are the
+    :attr:`license_id`, :attr:`match_key`, :attr:`terms`,
+    :attr:`terms_index` and :attr:`terms_url`, and those accessors are the
     supported way to read an identifier. The bytes and offsets behind them
     are specified at
     https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
@@ -176,10 +180,12 @@ class FodId:
     which are the authority for both. In short, the header is shared by
     every identifier type and the type then fixes the length of the match
     key that follows, being a 32-byte SHA-256 for Probabilistic and
-    HashedEmail or 16 GUID bytes for Random. A payload longer than the
-    header and match key is accepted, because the bytes after the match key
-    are a creator context section whose lengths belong to the cloud, so
-    this package places no upper bound on a payload or an envelope.
+    HashedEmail or 16 GUID bytes for Random, and the Terms byte follows the
+    match key. A payload longer than that is accepted, because the bytes
+    after the Terms are a creator context section whose lengths belong to
+    the cloud, so this package places no upper bound on a payload or an
+    envelope. A payload that ends at the match key was issued before the
+    Terms existed and reads as terms that are not stated.
 
     Reading and verifying are separate steps. :meth:`try_from_base64` and
     :meth:`try_from_byte_array` read external data without raising and
@@ -217,19 +223,20 @@ class FodId:
         self._assign(read.owid, *_unpack_or_raise(read.owid.payload))
 
     def _assign(self, owid: Owid, flags: int, license_id: int,
-                match_key: bytes) -> None:
+                match_key: bytes, terms_index: int) -> None:
         self._owid = owid
         self._flags = flags
         self._license_id = license_id
         self._match_key = match_key
+        self._terms_index = terms_index
 
     @classmethod
     def _build(cls, owid: Owid, flags: int, license_id: int,
-               match_key: bytes) -> "FodId":
+               match_key: bytes, terms_index: int) -> "FodId":
         """An identifier over fields :func:`_read_payload` has already
         checked, so the constructor's read is not repeated."""
         fod_id = cls.__new__(cls)
-        fod_id._assign(owid, flags, license_id, match_key)
+        fod_id._assign(owid, flags, license_id, match_key, terms_index)
         return fod_id
 
     @classmethod
@@ -239,12 +246,13 @@ class FodId:
         builds the identifier only when both have passed."""
         if not read.ok:
             return _failed(FodIdParseStatus.of(read.status))
-        status, flags, license_id, match_key = _read_payload(
+        status, flags, license_id, match_key, terms_index = _read_payload(
             read.owid.payload)
         if status is not FodIdParseStatus.PARSED:
             return _failed(status)
         return FodIdParseResult(
-            True, cls._build(read.owid, flags, license_id, match_key),
+            True,
+            cls._build(read.owid, flags, license_id, match_key, terms_index),
             FodIdParseStatus.PARSED)
 
     @classmethod
@@ -412,6 +420,45 @@ class FodId:
         return self._match_key
 
     @property
+    def terms(self) -> Terms:
+        """The terms document the identifier was created under, so the
+        terms travel with the identifier instead of alongside it. See
+        :class:`~fiftyone_pipeline_did.Terms`, which sets out why terms
+        that are not stated and terms this package cannot name are
+        different answers and must never be read as the same one."""
+        return Terms.from_index(self._terms_index)
+
+    @property
+    def terms_index(self) -> int:
+        """The raw value of the Terms byte (0 to 255), being the index into
+        the table of terms documents in the specification.
+
+        A payload that ends at the match key was issued before the Terms
+        existed and reads as 0, which says the terms are not stated in the
+        identifier, so absence and zero mean the same thing. The index is
+        exposed because a caller will meet one added after this package was
+        released, and it can then name which index it could not read, or
+        look the document up by hand, neither of which :attr:`terms` alone
+        allows.
+        """
+        return self._terms_index
+
+    @property
+    def terms_url(self) -> Optional[str]:
+        """The address of the terms document, and ``None`` where the terms
+        are not stated in the identifier or where the index is one this
+        package does not know.
+
+        The address is answered and never fetched, because what to do with
+        the document is the receiver's decision. ``None`` for an index this
+        package does not know says only that the document cannot be named
+        here, and never that there is no document, which is what
+        :attr:`terms` and :attr:`terms_index` are read together to tell
+        apart.
+        """
+        return self.terms.url
+
+    @property
     def version(self) -> Version:
         """The OWID version."""
         return self._owid.version
@@ -496,25 +543,27 @@ def _date_minutes(fod_id: "FodId") -> int:
     return int((fod_id.date - DATE_EPOCH).total_seconds() // 60)
 
 
-def _read_payload(payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes]:
-    """Applies the two 51Did payload rules and unpacks the three fields.
+def _read_payload(
+        payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes, int]:
+    """Applies the two 51Did payload rules and unpacks the four fields.
 
     The header must be present before the type can be read, and the type
-    then says how many match key bytes must follow. Anything beyond the
-    match key is a creator context section whose lengths belong to the
-    cloud, so a longer payload passes. A Reserved type has no known match
-    key length and keeps the documented best-effort reading, being the
-    header fields and whatever bytes follow.
+    then says how many match key bytes must follow. The Terms byte follows
+    the match key, and anything beyond it is a creator context section
+    whose lengths belong to the cloud, so a longer payload passes. A
+    Reserved type has no known match key length and keeps the documented
+    best-effort reading, being the header fields and whatever bytes follow.
 
-    Returns the status and, on success, the flags, the licence id and the
-    match key bytes. On failure the three fields are zero and empty.
+    Returns the status and, on success, the flags, the licence id, the
+    match key bytes and the Terms index. On failure the four fields are
+    zero and empty.
     """
     if payload is None or len(payload) < HEADER_LENGTH:
-        return FodIdParseStatus.PAYLOAD_TOO_SHORT, 0, 0, b""
+        return FodIdParseStatus.PAYLOAD_TOO_SHORT, 0, 0, b"", 0
     flags = payload[FLAGS_OFFSET]
     match_key_length = _match_key_length(IdType.from_flags(flags), payload)
     if len(payload) < HEADER_LENGTH + match_key_length:
-        return FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH, 0, 0, b""
+        return FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH, 0, 0, b"", 0
     # Little-endian uint32, unsigned (Python ints are unbounded and
     # non-negative here, so the high bit never becomes negative).
     license_id = int.from_bytes(
@@ -526,16 +575,32 @@ def _read_payload(payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes]:
     # to change the underlying payload and no defensive copy is required.
     match_key = bytes(
         payload[MATCH_KEY_OFFSET:MATCH_KEY_OFFSET + match_key_length])
-    return FodIdParseStatus.PARSED, flags, license_id, match_key
+    return (FodIdParseStatus.PARSED, flags, license_id, match_key,
+            _read_terms_index(payload, MATCH_KEY_OFFSET + match_key_length))
 
 
-def _unpack_or_raise(payload: bytes) -> Tuple[int, int, bytes]:
+def _read_terms_index(payload: bytes, offset: int) -> int:
+    """The Terms byte at the offset the match key ends at, and the index
+    that says the terms are not stated where the payload ends there.
+
+    An identifier issued before the Terms existed has a payload ending at
+    the match key, so absence and zero mean the same thing and neither has
+    to be told apart from the other. A Reserved type takes every byte after
+    the header as its match key, since no length is defined for it, and so
+    leaves nothing here to read.
+    """
+    if len(payload) < offset + TERMS_LENGTH:
+        return ABSENT_TERMS_INDEX
+    return payload[offset]
+
+
+def _unpack_or_raise(payload: bytes) -> Tuple[int, int, bytes, int]:
     """The payload rules for the raising readers, with the messages they
     have always given."""
-    status, flags, license_id, match_key = _read_payload(payload)
+    status, flags, license_id, match_key, terms_index = _read_payload(payload)
     if status is not FodIdParseStatus.PARSED:
         raise ValueError(_payload_message(status, payload))
-    return flags, license_id, match_key
+    return flags, license_id, match_key, terms_index
 
 
 def _match_key_length(id_type: IdType, payload: bytes) -> int:

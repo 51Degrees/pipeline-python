@@ -61,3 +61,13 @@ GUID_LENGTH = 16
 RANDOM_PAYLOAD_LENGTH = HEADER_LENGTH + GUID_LENGTH
 #: Minimum byte length of a Probabilistic or HashedEmail 51Did payload.
 PAYLOAD_LENGTH = MATCH_KEY_OFFSET + MATCH_KEY_LENGTH
+#: Byte length of the Terms field, which follows the match key. There is no
+#: offset constant for it, because the identifier type fixes the match key
+#: length and so the type says where the field starts.
+TERMS_LENGTH = 1
+#: The Terms index a payload with no byte after the match key reads as,
+#: being the index that says the terms are not stated in the identifier. An
+#: identifier issued before the Terms existed ends at the match key, so
+#: absence and zero mean the same thing and neither has to be told apart
+#: from the other.
+ABSENT_TERMS_INDEX = 0
