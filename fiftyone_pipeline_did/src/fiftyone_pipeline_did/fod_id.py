@@ -184,8 +184,8 @@ class FodId:
     match key. A payload longer than that is accepted, because the bytes
     after the Terms are a creator context section whose lengths belong to
     the cloud, so this package places no upper bound on a payload or an
-    envelope. A payload that ends at the match key was issued before the
-    Terms existed and reads as terms that are not stated.
+    envelope. A payload that ends at the match key reads as terms that are
+    not stated.
 
     Reading and verifying are separate steps. :meth:`try_from_base64` and
     :meth:`try_from_byte_array` read external data without raising and
@@ -433,13 +433,12 @@ class FodId:
         """The raw value of the Terms byte (0 to 255), being the index into
         the table of terms documents in the specification.
 
-        A payload that ends at the match key was issued before the Terms
-        existed and reads as 0, which says the terms are not stated in the
-        identifier, so absence and zero mean the same thing. The index is
-        exposed because a caller will meet one added after this package was
-        released, and it can then name which index it could not read, or
-        look the document up by hand, neither of which :attr:`terms` alone
-        allows.
+        A payload that ends at the match key reads as 0, which says the
+        terms are not stated in the identifier, so absence and zero mean
+        the same thing. The index is exposed because a caller will meet one
+        added after this package was released, and it can then name which
+        index it could not read, or look the document up by hand, neither
+        of which :attr:`terms` alone allows.
         """
         return self._terms_index
 
@@ -583,9 +582,9 @@ def _read_terms_index(payload: bytes, offset: int) -> int:
     """The Terms byte at the offset the match key ends at, and the index
     that says the terms are not stated where the payload ends there.
 
-    An identifier issued before the Terms existed has a payload ending at
-    the match key, so absence and zero mean the same thing and neither has
-    to be told apart from the other.
+    A payload ending at the match key has no byte to read, so absence and
+    zero mean the same thing and neither has to be told apart from the
+    other.
 
     A Reserved type cannot carry a Terms byte this package can find,
     because no match key length is defined for that type and so every byte

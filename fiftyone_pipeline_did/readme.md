@@ -37,8 +37,8 @@ the match key that follows, being 32 bytes for `PROBABILISTIC` and
 `HASHED_EMAIL`, 16 for `RANDOM`, and whatever remains for `RESERVED`. The
 Terms byte follows the match key, and the bytes after it are a creator
 context section. Identifiers issued before the type tag existed decode as
-`PROBABILISTIC`, and identifiers issued before the Terms existed end at
-the match key and read as terms that are not stated.
+`PROBABILISTIC`, and a payload that ends at the match key reads as terms
+that are not stated.
 
 This package does not publish the offsets or the raw flags byte, and it
 does not need to, because every field has a typed accessor that reads it
@@ -171,10 +171,9 @@ say which index it could not read.
 empty string, and this package answers with the address and never fetches
 it, because what to do with the document is the receiver's decision.
 
-An identifier issued before the Terms existed has a payload ending at the
-match key, and a payload with no byte after the match key reads as index
-0, so absence and zero mean the same thing and no presence flag exists to
-tell them apart. The Usage and the Terms answer different questions and a
+A payload with no byte after the match key reads as index 0, so absence
+and zero mean the same thing and no presence flag exists to tell them
+apart. The Usage and the Terms answer different questions and a
 receiver needs both, because the Usage says where an identifier may go and
 the Terms says under which document it was created.
 

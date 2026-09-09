@@ -63,8 +63,8 @@ class Terms(Enum):
     says under which document it was created."""
 
     #: The terms are not stated in the identifier, which is index 0 and
-    #: also what an identifier issued before the Terms existed reads as,
-    #: its payload ending at the match key.
+    #: also what an identifier whose payload ends at the match key reads
+    #: as.
     NOT_STATED = "NotStated"
     #: Index 1, the Model Terms for Marketing version 2, at
     #: https://m4ow.uk/mtm/2.txt

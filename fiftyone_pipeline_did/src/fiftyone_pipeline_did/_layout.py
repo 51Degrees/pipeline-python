@@ -66,8 +66,7 @@ PAYLOAD_LENGTH = MATCH_KEY_OFFSET + MATCH_KEY_LENGTH
 #: length and so the type says where the field starts.
 TERMS_LENGTH = 1
 #: The Terms index a payload with no byte after the match key reads as,
-#: being the index that says the terms are not stated in the identifier. An
-#: identifier issued before the Terms existed ends at the match key, so
-#: absence and zero mean the same thing and neither has to be told apart
+#: being the index that says the terms are not stated in the identifier.
+#: Absence and zero mean the same thing and neither has to be told apart
 #: from the other.
 ABSENT_TERMS_INDEX = 0

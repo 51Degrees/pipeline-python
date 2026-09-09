@@ -813,10 +813,10 @@ class FodIdTermsTests(unittest.TestCase):
     # ----- A payload that ends at the match key -----
 
     def test_payload_ending_at_the_match_key_states_no_terms(self):
-        # An identifier issued before the Terms existed ends at the match
-        # key. A missing byte is index 0, which says the terms are not
-        # stated in the identifier, so absence and zero mean the same
-        # thing and no presence flag is needed to tell them apart.
+        # There is no byte after the match key to read. A missing byte is
+        # index 0, which says the terms are not stated in the identifier,
+        # so absence and zero mean the same thing and no presence flag is
+        # needed to tell them apart.
         for name, payload, length in (
                 ("probabilistic", canonical_payload(), MATCH_KEY_LENGTH),
                 ("random", canonical_random_payload(), GUID_LENGTH)):
@@ -927,7 +927,7 @@ class FodIdTermsTests(unittest.TestCase):
         # A Reserved type has no defined match key length, so its
         # documented best-effort reading takes every byte after the header
         # and leaves none to read as the Terms. It therefore states no
-        # terms, which is what it stated before the Terms existed.
+        # terms.
         payload = canonical_payload()
         payload[FLAGS_OFFSET] = 0b1100_0101
         fod = self._read(with_terms(payload, MODEL_TERMS_INDEX))
