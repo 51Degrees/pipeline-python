@@ -68,7 +68,7 @@ class Terms(Enum):
     NOT_STATED = "NotStated"
     #: Index 1, the Model Terms for Marketing version 2, at
     #: https://m4ow.uk/mtm/2.txt
-    MODEL_TERMS_FOR_MARKETING_VERSION_2 = "ModelTermsForMarketingVersion2"
+    MODEL_TERMS_FOR_MARKETING_2 = "ModelTermsForMarketing2"
     #: An index added after this package was released, so the identifier
     #: states terms this package cannot name. Never treat it as
     #: :attr:`NOT_STATED`, which would read an identifier created under
@@ -94,11 +94,11 @@ class Terms(Enum):
 
 _BY_INDEX = {
     0: Terms.NOT_STATED,
-    1: Terms.MODEL_TERMS_FOR_MARKETING_VERSION_2,
+    1: Terms.MODEL_TERMS_FOR_MARKETING_2,
 }
 
 _URL = {
     Terms.NOT_STATED: None,
-    Terms.MODEL_TERMS_FOR_MARKETING_VERSION_2: "https://m4ow.uk/mtm/2.txt",
+    Terms.MODEL_TERMS_FOR_MARKETING_2: "https://m4ow.uk/mtm/2.txt",
     Terms.UNKNOWN: None,
 }

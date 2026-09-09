@@ -585,9 +585,14 @@ def _read_terms_index(payload: bytes, offset: int) -> int:
 
     An identifier issued before the Terms existed has a payload ending at
     the match key, so absence and zero mean the same thing and neither has
-    to be told apart from the other. A Reserved type takes every byte after
-    the header as its match key, since no length is defined for it, and so
-    leaves nothing here to read.
+    to be told apart from the other.
+
+    A Reserved type cannot carry a Terms byte this package can find,
+    because no match key length is defined for that type and so every byte
+    after the header is its match key. The offset then lands at the end of
+    the payload, nothing is left to read, and the identifier answers with
+    the index that says the terms are not stated. That is the right answer
+    and not a defect, so no special case is written for it.
     """
     if len(payload) < offset + TERMS_LENGTH:
         return ABSENT_TERMS_INDEX

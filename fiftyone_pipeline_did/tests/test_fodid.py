@@ -845,7 +845,7 @@ class FodIdTermsTests(unittest.TestCase):
             with self.subTest(name):
                 fod = self._read(with_terms(payload, MODEL_TERMS_INDEX))
                 self.assertEqual(MODEL_TERMS_INDEX, fod.terms_index)
-                self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_VERSION_2,
+                self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_2,
                               fod.terms)
                 self.assertEqual(MODEL_TERMS_URL, fod.terms_url)
                 self.assertEqual(length, len(fod.match_key))
@@ -908,7 +908,7 @@ class FodIdTermsTests(unittest.TestCase):
                 fod = self._read(built)
                 self.assertEqual(key, fod.match_key)
                 self.assertEqual(MODEL_TERMS_INDEX, fod.terms_index)
-                self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_VERSION_2,
+                self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_2,
                               fod.terms)
                 self.assertEqual(MODEL_TERMS_URL, fod.terms_url)
 
@@ -952,7 +952,7 @@ class FodIdTermsTests(unittest.TestCase):
         )
         for fod in readers:
             self.assertEqual(MODEL_TERMS_INDEX, fod.terms_index)
-            self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_VERSION_2,
+            self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_2,
                           fod.terms)
             self.assertEqual(MODEL_TERMS_URL, fod.terms_url)
 
@@ -1003,7 +1003,7 @@ class TermsTests(unittest.TestCase):
 
     def test_from_index_names_the_indexes_the_package_knows(self):
         self.assertIs(Terms.NOT_STATED, Terms.from_index(0))
-        self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_VERSION_2,
+        self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_2,
                       Terms.from_index(1))
 
     def test_from_index_names_every_other_index_unknown(self):
@@ -1014,7 +1014,7 @@ class TermsTests(unittest.TestCase):
         self.assertIsNone(Terms.NOT_STATED.url)
         self.assertIsNone(Terms.UNKNOWN.url)
         self.assertEqual("https://m4ow.uk/mtm/2.txt",
-                         Terms.MODEL_TERMS_FOR_MARKETING_VERSION_2.url)
+                         Terms.MODEL_TERMS_FOR_MARKETING_2.url)
 
     def test_every_member_answers_the_address_question(self):
         # A member added without an address entry would raise here rather

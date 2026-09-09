@@ -99,9 +99,8 @@ from_consent = fod_id.usage_from_consent  # True when read from a consent
                                           # string the caller sent
 license_id = fod_id.license_id
 match_key = fod_id.match_key  # SHA-256 or GUID bytes, see type
-terms = fod_id.terms          # Terms.NOT_STATED / Terms.UNKNOWN, or a
-                              # named document, being
-                              # MODEL_TERMS_FOR_MARKETING_VERSION_2
+terms = fod_id.terms          # Terms.NOT_STATED / UNKNOWN, or a named
+                              # document, MODEL_TERMS_FOR_MARKETING_2
 terms_index = fod_id.terms_index  # the raw byte, 0 to 255
 terms_url = fod_id.terms_url  # the address, or None where there is none
 
