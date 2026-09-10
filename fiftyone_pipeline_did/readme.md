@@ -285,12 +285,15 @@ same_match_key = a.match_key == b.match_key
 
 `DidClient` handles every manipulation of a 51Did a server needs against
 the cloud, so server code never builds a cloud URL or handles a key
-itself. One instance serves a whole server, and its key cache is safe to
-share across threads. It uses `urllib` and `json` from the standard
-library, so this package gains no dependency the pipeline does not
-already carry.
+itself. Every method that reaches the cloud is a coroutine, so a server
+awaits it on its event loop and there is no blocking form. One instance
+serves a whole server, and its key cache is guarded by an asyncio lock so
+that concurrent awaits for the key list share one fetch. It uses
+`asyncio`, `urllib` and `json` from the standard library, so this package
+gains no dependency the pipeline does not already carry.
 
 ```python
+import asyncio
 import os
 from fiftyone_pipeline_did import DidClient, FodId
 
@@ -299,6 +302,35 @@ client = DidClient(
     os.environ.get("_51DEGREES_LICENSE_KEY"),   # optional, see below
     # endpoint defaults to FOD_CLOUD_API_URL, then the public cloud
 )
+
+async def check(text):
+    fod_id = FodId.from_base64(text)
+    return await client.verify_signature(fod_id)
+
+# Inside an asyncio server, await the client directly. A script or a
+# synchronous framework drives one call with asyncio.run.
+valid = asyncio.run(check(fifty_one_did))
+```
+
+The default transport runs `urllib` on a worker thread through
+`asyncio.to_thread`, which keeps blocking I/O off the event loop rather
+than making the I/O itself non-blocking. For a fully non-blocking client
+supply a transport built on `aiohttp` or `httpx`, being an async callable
+that takes the prepared `urllib.request.Request` and answers
+`(status, body_bytes)` whatever the status. Neither library is a
+dependency of this package. With `httpx`, for example:
+
+```python
+import httpx
+
+async def httpx_transport(request):
+    async with httpx.AsyncClient(timeout=30) as http:
+        answer = await http.request(
+            request.get_method(), request.full_url,
+            content=request.data, headers=dict(request.header_items()))
+        return answer.status_code, answer.content
+
+client = DidClient(resource_key, licence_key, transport=httpx_transport)
 ```
 
 | Argument | Meaning |
@@ -306,7 +338,8 @@ client = DidClient(
 | `resource_key` | Required. The page's resource key, public by nature. It travels in the route of the key and verify requests and in the form body of the redeem request |
 | `licence_key` | Optional. A licence key of the same account, server side only. Needed to redeem where the account holds licence keys. Sent only in the body of the redeem request, never in a URL |
 | `endpoint` | Optional. The API base including the `/api/v4/` segment. Defaults to the `FOD_CLOUD_API_URL` environment variable, the same variable the cloud request engine honours, then to `https://cloud.51degrees.com/api/v4/`. A value without a trailing slash gains one |
-| `transport` | Optional. The HTTP transport, either a callable taking the prepared `urllib.request.Request` and returning `(status, body_bytes)`, or an `urllib.request.OpenerDirector`. Defaults to `urllib.request.urlopen`. Tests inject one |
+| `transport` | Optional. The HTTP transport, either an async callable taking the prepared `urllib.request.Request` and answering `(status, body_bytes)`, or an `urllib.request.OpenerDirector`, whose blocking `open` runs on a worker thread. Defaults to `urllib.request.urlopen` on a worker thread. Tests inject one |
+| `timeout` | Optional. Seconds the default transport waits for the cloud, 30 by default |
 | `now` | Optional. The clock, returning an aware UTC `datetime`. Tests inject one |
 
 Every request carries a `User-Agent` naming this package and its version.
@@ -334,13 +367,16 @@ longer payload carries a creator context and is accepted, its exact
 lengths being for the cloud to judge.
 
 ```python
-valid = client.verify_signature(fod_id)            # bool
-check = client.verify_signature_detailed(fod_id)   # SignatureCheck
+valid = await client.verify_signature(fod_id)            # bool
+check = await client.verify_signature_detailed(fod_id)   # SignatureCheck
 # check.valid is False and check.reason is SignatureReason.NO_KEY when
 # no published key covers the identifier's date
-keys = client.public_keys()          # [PublicKeyEntry(starts_at, public_key)]
-key = client.public_key_for(fod_id)  # the entry in force, or None
+keys = await client.public_keys()    # [PublicKeyEntry(starts_at, public_key)]
+key = await client.public_key_for(fod_id)  # the entry in force, or None
 ```
+
+These reach the cloud only when the key list needs fetching, and they
+are coroutines all the same so the fetch never blocks the loop.
 
 **3. Verify the signature through the cloud.** The open `verify`
 endpoint, one use against the resource key and no licence key needed. The
@@ -352,7 +388,7 @@ value the cloud itself refuses raises the same error carrying the cloud's
 message and `status_code` 400.
 
 ```python
-valid = client.verify(fod_id)   # bool
+valid = await client.verify(fod_id)   # bool
 ```
 
 **4. Redeem a sealed creator context result.** The verify-context and
@@ -363,7 +399,7 @@ acts on it redeems it on the server, with the licence key, against the
 51Did it knows independently.
 
 ```python
-redeemed = client.redeem(fod_id, result, challenge)
+redeemed = await client.redeem(fod_id, result, challenge)
 redeemed.context                  # ContextResult: VERIFIED, MISMATCH,
                                   #   NO_CONTEXT, NOT_CHECKABLE, EXPIRED,
                                   #   REPLAYED, UNREADABLE, UNCONFIRMED
@@ -395,7 +431,8 @@ with HTTP 400, a host
 that does not offer the creator context raises `DidNotSupportedError`
 (HTTP 404), and any other status raises `DidClientError` carrying
 `status_code` and `body`. A transport failure raises the `OSError` the
-transport raised, which is `urllib.error.URLError` by default.
+transport raised, which is `urllib.error.URLError` by default. Each of
+these is raised when the call is awaited, as with any coroutine.
 
 ## Examples
 
@@ -441,19 +478,27 @@ keys, then redeems the encrypted result with the challenge, adding the
 licence key the browser never sees. The essential lines are these.
 
 ```python
+import asyncio
 from fiftyone_pipeline_did import DidClient, FodId
 
 # Once, at start-up. RESOURCE, LICENCE and API come from the
 # environment variables below.
 client = DidClient(RESOURCE, LICENCE or None, API)
 
+async def check(client, fod_id, result, challenge):
+    signature_valid = await client.verify_signature(fod_id)
+    redeemed = await client.redeem(fod_id, result, challenge)
+    return signature_valid, redeemed
+
 # In the /redeem handler, with 51did, result and challenge from the
 # page. The identifier arrives in the URL-safe alphabet, which
-# from_base64 accepts alongside the standard one.
+# from_base64 accepts alongside the standard one. The demo sits on the
+# standard library's synchronous http.server, so it runs the check on a
+# short-lived event loop. An asyncio server awaits check() directly.
 fod_id = FodId.from_base64(query.get("51did", [""])[0])
-signature_valid = client.verify_signature(fod_id)
-redeemed = client.redeem(
-    fod_id, query.get("result", [""])[0], query.get("challenge", [""])[0])
+signature_valid, redeemed = asyncio.run(check(
+    client, fod_id, query.get("result", [""])[0],
+    query.get("challenge", [""])[0]))
 body = redeemed.to_dict()
 body["serverSignature"] = "verified" if signature_valid else "invalid"
 self.send_json(redeemed.status_code, body)

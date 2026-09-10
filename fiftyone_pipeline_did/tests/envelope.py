@@ -25,6 +25,7 @@ date and version, a key schedule as the cloud publishes one, and a
 transport stand-in that records requests and answers from a script, so no
 test touches the network."""
 
+import inspect
 import json
 import urllib.parse
 from datetime import datetime, timedelta, timezone
@@ -175,16 +176,17 @@ class KeySchedule:
 
 
 class FakeTransport:
-    """A transport that records every request and answers from a script
-    keyed on the path segment after the API base. Each answer is a
+    """An async transport that records every request and answers from a
+    script keyed on the path segment after the API base. Each answer is a
     ``(status, body)`` pair, or a callable taking the request and returning
-    one, or an exception instance to raise."""
+    one (a coroutine function is awaited, which is how a test makes an
+    answer take time), or an exception instance to raise."""
 
     def __init__(self, answers=None):
         self.answers = dict(answers or {})
         self.requests = []
 
-    def __call__(self, request):
+    async def __call__(self, request):
         self.requests.append(request)
         path = urllib.parse.urlparse(request.full_url).path
         for key, answer in self.answers.items():
@@ -192,7 +194,10 @@ class FakeTransport:
                 if isinstance(answer, BaseException):
                     raise answer
                 if callable(answer):
-                    return answer(request)
+                    answer = answer(request)
+                    if inspect.isawaitable(answer):
+                        answer = await answer
+                    return answer
                 status, body = answer
                 if isinstance(body, str):
                     body = body.encode("utf-8")

@@ -36,23 +36,31 @@ from the browser because the identifier describes the browser's own
 connection. The verify-context and verify-full endpoints are browser calls
 for the same reason and are not offered here.
 
-Standard library only (``urllib`` and ``json``), so this package gains no
-dependency the pipeline does not already carry.
+Every method that reaches the cloud is a coroutine, so a server awaits
+it on its event loop and there is no blocking form. The default transport
+runs the standard library's ``urllib`` on a worker thread through
+:func:`asyncio.to_thread`, and a fully non-blocking transport built on
+``aiohttp`` or ``httpx`` can be supplied instead.
+
+Standard library only (``asyncio``, ``urllib`` and ``json``), so this
+package gains no dependency the pipeline does not already carry.
 """
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import os
 import re
-import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import (
+    Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union)
 
 from ._owid import Version
 
@@ -236,11 +244,13 @@ class SignatureCheck:
 #: The type of a factor value in :attr:`RedeemResult.factors`.
 FactorValue = Optional[FactorResult]
 
-#: The shape of an injected transport: a callable taking the prepared
-#: :class:`urllib.request.Request` and returning the HTTP status and the
-#: response body, whatever the status. An object with an ``open`` method
-#: (an :class:`urllib.request.OpenerDirector`) is accepted as well.
-Transport = Callable[[urllib.request.Request], Tuple[int, bytes]]
+#: The shape of an injected transport: an async callable taking the
+#: prepared :class:`urllib.request.Request` and answering the HTTP status
+#: and the response body, whatever the status. An object with an ``open``
+#: method (an :class:`urllib.request.OpenerDirector`) is accepted as well,
+#: and its blocking ``open`` runs on a worker thread as the default
+#: transport does.
+Transport = Callable[[urllib.request.Request], Awaitable[Tuple[int, bytes]]]
 
 _ISO_8601 = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?"
@@ -393,9 +403,11 @@ def _factor_of(value: Any) -> FactorValue:
 class DidClient:
     """Everything a server does with a 51Did against the 51Degrees cloud.
 
+    Every method that reaches the cloud is a coroutine and must be awaited.
     The public key list is cached per instance with the time it was
-    fetched, behind a lock, so one instance can serve a whole server across
-    threads.
+    fetched, behind an asyncio lock, so one instance serves a whole server
+    on its event loop and concurrent awaits for the list share one fetch
+    rather than each making its own.
 
     :param resource_key: the page's resource key. Required. Public by
         nature, it travels in the route of the key and verify requests and
@@ -406,11 +418,15 @@ class DidClient:
     :param endpoint: the API base including the ``/api/v4/`` segment.
         Defaults to the ``FOD_CLOUD_API_URL`` environment variable, then to
         the public cloud. A value without a trailing slash gains one.
-    :param transport: the HTTP transport, either a callable taking the
-        prepared :class:`urllib.request.Request` and returning
+    :param transport: the HTTP transport, either an async callable taking
+        the prepared :class:`urllib.request.Request` and answering
         ``(status, body_bytes)``, or an
-        :class:`urllib.request.OpenerDirector`. Defaults to
-        :func:`urllib.request.urlopen`. Tests inject one.
+        :class:`urllib.request.OpenerDirector`. The default runs
+        :func:`urllib.request.urlopen` on a worker thread through
+        :func:`asyncio.to_thread`, which is blocking I/O kept off the
+        event loop rather than non-blocking I/O, so supply an ``aiohttp``
+        or ``httpx`` based transport for a fully non-blocking one. Tests
+        inject one.
     :param now: the clock, returning an aware UTC datetime. Defaults to
         :meth:`datetime.now` in UTC. Tests inject one.
     :param timeout: seconds the default transport waits for the cloud.
@@ -434,7 +450,11 @@ class DidClient:
         self._transport = transport
         self._timeout = timeout
         self._now = now or (lambda: datetime.now(timezone.utc))
-        self._lock = threading.Lock()
+        # Created on first use inside a running event loop, and made again
+        # when a different loop uses the client, because an asyncio lock
+        # belongs to the event loop it is first used on. See _loop_lock.
+        self._lock: Optional[asyncio.Lock] = None
+        self._lock_loop: Optional[asyncio.AbstractEventLoop] = None
         self._keys: Optional[List[PublicKeyEntry]] = None
         self._fetched_at: Optional[datetime] = None
         self._fetch_count = 0
@@ -458,15 +478,16 @@ class DidClient:
 
     # ----- Public keys and key selection -----
 
-    def public_keys(self) -> List[PublicKeyEntry]:
+    async def public_keys(self) -> List[PublicKeyEntry]:
         """The published signing keys, oldest first, fetched on first use
         and then served from the cache until the list is a day old. Keys are
         published up to three months ahead of their start, so the list
-        holds entries that have not started yet."""
-        with self._lock:
-            return list(self._public_keys_locked())
+        holds entries that have not started yet. Concurrent awaits while a
+        fetch is in flight wait for that fetch and share its answer."""
+        async with self._loop_lock():
+            return list(await self._current_keys_locked())
 
-    def public_key_for(self, fod_id: Union[FodId, str]) \
+    async def public_key_for(self, fod_id: Union[FodId, str]) \
             -> Optional[PublicKeyEntry]:
         """The key in force when the identifier was created, being the
         entry whose start is latest on or before the identifier's date. The
@@ -476,11 +497,11 @@ class DidClient:
         date precedes every published key."""
         identifier = _as_fod_id(fod_id)
         date = _date_of(identifier)
-        return _in_force_at(self._keys_for(date), date)
+        return _in_force_at(await self._keys_for(date), date)
 
     # ----- Offline signature verification -----
 
-    def verify_signature(self, fod_id: Union[FodId, str]) -> bool:
+    async def verify_signature(self, fod_id: Union[FodId, str]) -> bool:
         """Verifies the identifier's signature offline against the
         published keys, as the cloud's own verify endpoint does. The
         envelope version must be the one the cloud signs, the payload must
@@ -488,10 +509,10 @@ class DidClient:
         a creator context and is accepted), and the signature must verify
         against the key in force at the identifier's date or, near a
         period boundary, the neighbouring key. No earlier key is ever
-        tried."""
-        return self.verify_signature_detailed(fod_id).valid
+        tried. Reaches the cloud only when the key list needs fetching."""
+        return (await self.verify_signature_detailed(fod_id)).valid
 
-    def verify_signature_detailed(self, fod_id: Union[FodId, str]) \
+    async def verify_signature_detailed(self, fod_id: Union[FodId, str]) \
             -> SignatureCheck:
         """As :meth:`verify_signature`, with the reason alongside the
         answer, so a caller can tell an identifier no key covers from one
@@ -502,7 +523,7 @@ class DidClient:
         if not _payload_length_valid(identifier):
             return SignatureCheck(False, SignatureReason.LENGTH)
         date = _date_of(identifier)
-        candidates = _candidates_for_date(self._keys_for(date), date)
+        candidates = _candidates_for_date(await self._keys_for(date), date)
         if not candidates:
             return SignatureCheck(False, SignatureReason.NO_KEY)
         for key in candidates:
@@ -512,7 +533,7 @@ class DidClient:
 
     # ----- Cloud signature verification -----
 
-    def verify(self, fod_id: Union[FodId, str]) -> bool:
+    async def verify(self, fod_id: Union[FodId, str]) -> bool:
         """Verifies the identifier's signature through the cloud's verify
         endpoint, the open endpoint that needs no licence key. One use
         against the resource key.
@@ -522,9 +543,10 @@ class DidClient:
         message naming the parse status, or when the cloud refused the
         value, with the cloud's message, and :class:`DidClientError` on any
         answer other than valid or invalid. Text far longer than any
-        identifier raises :class:`ValueError` before transport. A transport failure raises
-        the :class:`OSError` the transport raised
-        (:class:`urllib.error.URLError` by default)."""
+        identifier raises :class:`ValueError` before transport. A
+        transport failure raises the :class:`OSError` the transport raised
+        (:class:`urllib.error.URLError` by default). Being a coroutine,
+        every one of these is raised when the call is awaited."""
         text = _identifier_text(fod_id)
         # The identifier travels under both names so the request works with
         # hosts that read either parameter. Hosts that recognise both prefer
@@ -533,7 +555,7 @@ class DidClient:
         url = "{0}id/verify/{1}?51did={2}&owid={2}".format(
             self._endpoint, urllib.parse.quote(self._resource_key, safe=""),
             encoded)
-        status, body = self._send(urllib.request.Request(
+        status, body = await self._send(urllib.request.Request(
             url, headers={"User-Agent": USER_AGENT}, method="GET"))
         parsed = _try_parse_json(body)
         if isinstance(parsed, dict):
@@ -550,8 +572,8 @@ class DidClient:
 
     # ----- Redeem -----
 
-    def redeem(self, fod_id: Union[FodId, str], result: str,
-               challenge: Optional[str] = None) -> RedeemResult:
+    async def redeem(self, fod_id: Union[FodId, str], result: str,
+                     challenge: Optional[str] = None) -> RedeemResult:
         """Redeems a sealed creator context result against the identifier,
         on the server, with the licence key.
 
@@ -584,6 +606,9 @@ class DidClient:
         :raises DidClientError: on any other status.
         :raises OSError: when the transport failed to reach the cloud
             (:class:`urllib.error.URLError` by default).
+
+        Being a coroutine, every one of these is raised when the call is
+        awaited.
         """
         text = _identifier_text(fod_id)
         form = [
@@ -595,7 +620,7 @@ class DidClient:
         if self._licence_key is not None:
             form.append(("license", self._licence_key))
         url = self._endpoint + "id/redeem"
-        status, body = self._send(urllib.request.Request(
+        status, body = await self._send(urllib.request.Request(
             url,
             data=urllib.parse.urlencode(form).encode("ascii"),
             headers={
@@ -622,41 +647,76 @@ class DidClient:
 
     # ----- Internals -----
 
-    def _send(self, request: urllib.request.Request) -> Tuple[int, str]:
+    async def _send(self, request: urllib.request.Request) \
+            -> Tuple[int, str]:
         """Sends the request through the transport and answers the status
         and the body as text, whatever the status. A non-2xx answer is an
         answer, not an exception, so each caller can read what the cloud
         said. Only a failure to reach the cloud raises, as the
-        :class:`OSError` the transport raised."""
+        :class:`OSError` the transport raised.
+
+        The default transport and an opener both block, so they run on a
+        worker thread through :func:`asyncio.to_thread` and the event loop
+        stays free while the cloud answers. An injected callable must be
+        an async one, and a plain callable is refused by name rather than
+        left to fail on the await, so the mistake reads as what it is."""
         transport = self._transport
         if transport is None:
-            status, body = _urlopen(
+            status, body = await asyncio.to_thread(
+                _urlopen,
                 lambda: urllib.request.urlopen(request,
                                                timeout=self._timeout))
         elif hasattr(transport, "open"):
-            status, body = _urlopen(
+            status, body = await asyncio.to_thread(
+                _urlopen,
                 lambda: transport.open(request, timeout=self._timeout))
         else:
-            status, body = transport(request)
+            answer = transport(request)
+            if not inspect.isawaitable(answer):
+                raise TypeError(
+                    "transport must be an async callable answering "
+                    "(status, body), or an object with an open method")
+            status, body = await answer
         if isinstance(body, bytes):
             body = body.decode("utf-8", errors="replace")
         return int(status), body
 
-    def _public_keys_locked(self) -> List[PublicKeyEntry]:
+    def _loop_lock(self) -> asyncio.Lock:
+        """The lock guarding the key cache, for the running event loop.
+
+        An asyncio lock belongs to the event loop it is first used on, so
+        a client used from a second loop (a script calling
+        :func:`asyncio.run` more than once, or a test doing the same)
+        would otherwise fail with a lock bound to a loop that has gone.
+        A fresh lock is made for the new loop instead. A client is used
+        from one thread's loop at a time, as any asyncio object is, so the
+        check and the swap cannot interleave."""
+        loop = asyncio.get_running_loop()
+        if self._lock is None or self._lock_loop is not loop:
+            self._lock = asyncio.Lock()
+            self._lock_loop = loop
+        return self._lock
+
+    async def _current_keys_locked(self) -> List[PublicKeyEntry]:
         if self._keys is None or self._stale():
-            return self._refresh_locked()
+            return await self._refresh_locked()
         return self._keys
 
-    def _keys_for(self, date: datetime) -> List[PublicKeyEntry]:
+    async def _keys_for(self, date: datetime) -> List[PublicKeyEntry]:
         """The key list to select from for the given date, fetched again
         once where the rule in :meth:`public_key_for` calls for it and the
-        list was not just fetched."""
-        with self._lock:
-            fetched_before = self._fetch_count
-            keys = self._public_keys_locked()
+        list was not just fetched.
+
+        The fetch count is read before waiting for the lock, so a fetch
+        that completes while this call waits counts as this call's own,
+        and concurrent awaits for a date past the newest start share that
+        one fetch instead of each fetching again after the other."""
+        fetched_before = self._fetch_count
+        async with self._loop_lock():
+            keys = await self._current_keys_locked()
             if self._fetch_count == fetched_before \
                     and self._needs_refetch(keys, date):
-                keys = self._refresh_locked()
+                keys = await self._refresh_locked()
             return keys
 
     def _needs_refetch(self, keys: List[PublicKeyEntry],
@@ -671,21 +731,21 @@ class DidClient:
         return self._fetched_at is None \
             or self._now() - self._fetched_at > KEY_LIST_MAX_AGE
 
-    def _refresh_locked(self) -> List[PublicKeyEntry]:
-        keys = self._fetch_keys()
+    async def _refresh_locked(self) -> List[PublicKeyEntry]:
+        keys = await self._fetch_keys()
         self._keys = keys
         self._fetched_at = self._now()
         self._fetch_count += 1
         return keys
 
-    def _fetch_keys(self) -> List[PublicKeyEntry]:
+    async def _fetch_keys(self) -> List[PublicKeyEntry]:
         """GET ``id/key/{resource}`` and read each entry's start and public
         key. ``startsAt`` is read where present and ``created`` otherwise.
         Both are supported start fields in key-list responses. ``weekStart``
         is ignored."""
         url = "{0}id/key/{1}".format(
             self._endpoint, urllib.parse.quote(self._resource_key, safe=""))
-        status, body = self._send(urllib.request.Request(
+        status, body = await self._send(urllib.request.Request(
             url, headers={"User-Agent": USER_AGENT}, method="GET"))
         if status != 200:
             raise DidClientError(
@@ -722,7 +782,8 @@ def _urlopen(open_call: Callable[[], Any]) -> Tuple[int, bytes]:
     """Runs a urllib open and answers the status and body whatever the
     status, since urllib raises for anything outside 2xx and the error is
     itself the response. A failure to reach the host propagates as the
-    :class:`urllib.error.URLError` (an :class:`OSError`) it raised."""
+    :class:`urllib.error.URLError` (an :class:`OSError`) it raised. This
+    blocks, so :meth:`DidClient._send` runs it on a worker thread."""
     try:
         with open_call() as response:
             return response.status, response.read()
