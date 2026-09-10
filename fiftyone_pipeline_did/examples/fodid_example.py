@@ -37,16 +37,25 @@ from fiftyone_pipeline_did import FodId
 
 DOMAIN = "51degrees.com"
 
+# Only the cloud issues real 51Dids, so this example writes a sample
+# payload by hand and states the layout here rather than reading it
+# from the package, which does not publish it. The layout is
+# specified at
+# https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
+SAMPLE_FLAGS = 0b0000_0011      # standard usage, Probabilistic type
+SAMPLE_PAYLOAD_LENGTH = 37      # 1 flags byte, 4 licence id, 32 key
+SAMPLE_MATCH_KEY_OFFSET = 5
+SAMPLE_MATCH_KEY_LENGTH = 32
+
 
 def sample_payload():
-    """A canonical 37-byte Probabilistic payload: flags 0x00, License Id
-    0x12345678 (little-endian) and a 32-byte match key 0x20..0x3F."""
-    payload = bytearray(FodId.PAYLOAD_LENGTH)
-    payload[FodId.FLAGS_OFFSET] = 0x00
-    payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET + 4] = \
-        bytes([0x78, 0x56, 0x34, 0x12])
-    for i in range(FodId.MATCH_KEY_LENGTH):
-        payload[FodId.MATCH_KEY_OFFSET + i] = 0x20 + i
+    """A canonical 37-byte Probabilistic payload: the flags byte, License
+    Id 0x12345678 (little-endian) and a 32-byte match key 0x20..0x3F."""
+    payload = bytearray(SAMPLE_PAYLOAD_LENGTH)
+    payload[0] = SAMPLE_FLAGS
+    payload[1:5] = bytes([0x78, 0x56, 0x34, 0x12])
+    for i in range(SAMPLE_MATCH_KEY_LENGTH):
+        payload[SAMPLE_MATCH_KEY_OFFSET + i] = 0x20 + i
     return bytes(payload)
 
 
@@ -69,7 +78,9 @@ def run():
     print("51Did parsed from base64:")
     print("  Domain    :", fod_id.domain)
     print("  Type      :", fod_id.type.name)
-    print("  Flags     : 0x{:02x}".format(fod_id.flags))
+    print("  Usage     :", fod_id.usage.name)
+    print("  Id usage  :", fod_id.usage.id_usage)
+    print("  Consent   :", fod_id.usage_from_consent)
     print("  LicenseId :", fod_id.license_id)
     print("  Match key :", fod_id.match_key.hex())
     print("  Verifies  :", fod_id.verify(crypto.public_key_pem()))

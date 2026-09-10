@@ -50,6 +50,15 @@ from fiftyone_pipeline_did import (
     SignatureResult,
 )
 from fiftyone_pipeline_did.did_client import USER_AGENT, parse_iso8601
+# The byte layout is not part of the package's public surface. These tests
+# build payloads byte by byte, so they read it from the private module, as
+# https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
+# says the package's own tests may.
+from fiftyone_pipeline_did._layout import (
+    MATCH_KEY_LENGTH,
+    MATCH_KEY_OFFSET,
+    PAYLOAD_LENGTH,
+)
 
 from .envelope import (
     EPOCH,
@@ -81,7 +90,7 @@ def run(coroutine):
 
 class FodIdBase64Tests(unittest.TestCase):
     """Section 1 of the run book: both alphabets, the URL-safe form and
-    the date as minutes."""
+    the date the envelope carries."""
 
     def setUp(self):
         self.crypto = Crypto.new()
@@ -89,8 +98,8 @@ class FodIdBase64Tests(unittest.TestCase):
         # encoded: every three bytes of 0xFB encode to "+/v7" whatever
         # the alignment, and a 32 byte run holds several whole triples.
         payload = bytearray(probabilistic_payload())
-        for i in range(FodId.MATCH_KEY_LENGTH):
-            payload[FodId.MATCH_KEY_OFFSET + i] = 0xFB
+        for i in range(MATCH_KEY_LENGTH):
+            payload[MATCH_KEY_OFFSET + i] = 0xFB
         self.fod_id = signed_fod_id(self.crypto, bytes(payload))
         self.standard = self.fod_id.as_base64()
         self.assertTrue("+" in self.standard or "/" in self.standard,
@@ -131,11 +140,14 @@ class FodIdBase64Tests(unittest.TestCase):
         self.assertEqual(self.standard,
                          FodId.to_standard_base64(self.standard))
 
-    def test_date_minutes_is_the_envelope_field(self):
+    def test_date_is_the_envelope_field(self):
+        # The envelope carries the date as a count of minutes since the
+        # OWID epoch. The typed date is that count read back, so the same
+        # fact is pinned through the accessor callers have.
         minutes = 3_456_789
-        fod_id = signed_fod_id(
-            self.crypto, date=EPOCH + timedelta(minutes=minutes))
-        self.assertEqual(minutes, fod_id.date_minutes)
+        created = EPOCH + timedelta(minutes=minutes)
+        fod_id = signed_fod_id(self.crypto, date=created)
+        self.assertEqual(created, fod_id.date)
         # Read the four date bytes straight off the wire: version byte,
         # the domain and its terminator, then the little-endian minutes.
         raw = fod_id.as_byte_array()
@@ -143,9 +155,8 @@ class FodIdBase64Tests(unittest.TestCase):
         self.assertEqual(
             minutes, struct.unpack("<I", raw[offset:offset + 4])[0])
 
-    def test_date_minutes_of_the_epoch_is_zero(self):
-        self.assertEqual(0, signed_fod_id(self.crypto, date=EPOCH)
-                         .date_minutes)
+    def test_date_of_the_epoch_is_the_epoch(self):
+        self.assertEqual(EPOCH, signed_fod_id(self.crypto, date=EPOCH).date)
 
 
 class ClientConstructionTests(unittest.TestCase):
@@ -476,7 +487,7 @@ class OfflineVerificationTests(unittest.TestCase):
     def test_true_for_a_payload_longer_than_the_base(self):
         fod_id = signed_fod_id(self.crypto, payload=context_payload(),
                                date=self.date)
-        self.assertGreater(len(fod_id.payload), FodId.PAYLOAD_LENGTH)
+        self.assertGreater(len(fod_id.payload), PAYLOAD_LENGTH)
         self.assertTrue(run(self.client.verify_signature(fod_id)))
 
     def test_true_for_a_payload_far_longer_than_the_base(self):
@@ -554,8 +565,8 @@ class CloudVerifyTests(unittest.TestCase):
         # A payload of 0xFB bytes encodes to "+/v7" whatever the alignment,
         # so the standard form carries both characters that need encoding.
         payload = bytearray(probabilistic_payload())
-        for i in range(FodId.MATCH_KEY_LENGTH):
-            payload[FodId.MATCH_KEY_OFFSET + i] = 0xFB
+        for i in range(MATCH_KEY_LENGTH):
+            payload[MATCH_KEY_OFFSET + i] = 0xFB
         standard = signed_fod_id(Crypto.new(), bytes(payload)).as_base64()
         self.assertIn("+", standard)
         self.assertIn("/", standard)

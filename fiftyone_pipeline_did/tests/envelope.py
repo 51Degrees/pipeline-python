@@ -34,6 +34,19 @@ from owid import Crypto, Owid, Version
 from owid import io as owid_io
 
 from fiftyone_pipeline_did import FodId
+# The byte layout is not part of the package's public surface. These tests
+# build payloads byte by byte, so they read it from the private module, as
+# https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
+# says the package's own tests may.
+from fiftyone_pipeline_did._layout import (
+    FLAGS_OFFSET,
+    GUID_LENGTH,
+    LICENSE_ID_OFFSET,
+    MATCH_KEY_LENGTH,
+    MATCH_KEY_OFFSET,
+    PAYLOAD_LENGTH,
+    RANDOM_PAYLOAD_LENGTH,
+)
 
 TEST_DOMAIN = "51degrees.com"
 
@@ -44,21 +57,21 @@ EPOCH = datetime(2020, 1, 1, tzinfo=timezone.utc)
 def probabilistic_payload():
     """A 37 byte payload of the Probabilistic type with recognisable
     bytes."""
-    payload = bytearray(FodId.PAYLOAD_LENGTH)
-    payload[FodId.FLAGS_OFFSET] = 0b0000_0101
-    payload[FodId.LICENSE_ID_OFFSET:FodId.LICENSE_ID_OFFSET + 4] = \
+    payload = bytearray(PAYLOAD_LENGTH)
+    payload[FLAGS_OFFSET] = 0b0000_0101
+    payload[LICENSE_ID_OFFSET:LICENSE_ID_OFFSET + 4] = \
         bytes([0x78, 0x56, 0x34, 0x12])
-    for i in range(FodId.MATCH_KEY_LENGTH):
-        payload[FodId.MATCH_KEY_OFFSET + i] = 0x20 + i
+    for i in range(MATCH_KEY_LENGTH):
+        payload[MATCH_KEY_OFFSET + i] = 0x20 + i
     return bytes(payload)
 
 
 def random_payload():
     """A 21 byte payload of the Random type."""
-    payload = bytearray(FodId.RANDOM_PAYLOAD_LENGTH)
-    payload[FodId.FLAGS_OFFSET] = (1 << 6) | 0b001
-    for i in range(FodId.GUID_LENGTH):
-        payload[FodId.MATCH_KEY_OFFSET + i] = 0x40 + i
+    payload = bytearray(RANDOM_PAYLOAD_LENGTH)
+    payload[FLAGS_OFFSET] = (1 << 6) | 0b001
+    for i in range(GUID_LENGTH):
+        payload[MATCH_KEY_OFFSET + i] = 0x40 + i
     return bytes(payload)
 
 

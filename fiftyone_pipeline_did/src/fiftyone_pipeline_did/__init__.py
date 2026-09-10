@@ -24,10 +24,17 @@
 Identifier) value.
 
 :class:`~fiftyone_pipeline_did.fod_id.FodId` parses a 51Did from its base64
-OWID form in either alphabet, exposes the three payload fields (Flags,
-License Id and the match key) and the identifier
-:class:`~fiftyone_pipeline_did.id_type.IdType`, and delegates OWID-level
-concerns to the wrapped envelope. ``FodId.try_from_base64`` and
+OWID form in either alphabet, exposes a typed accessor for every field it
+carries (the identifier :class:`~fiftyone_pipeline_did.id_type.IdType`, the
+:class:`~fiftyone_pipeline_did.usage.Usage` it was created for and whether
+that usage came from a consent string, the License Id and the match key),
+and delegates OWID-level concerns to the wrapped envelope. The raw bytes
+and offsets behind those accessors are not part of this surface, which is
+specified at
+https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
+and the layout it reads at
+https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
+``FodId.try_from_base64`` and
 ``FodId.try_from_byte_array`` read external data without raising and answer
 with a :class:`~fiftyone_pipeline_did.fod_id.FodIdParseResult` naming the
 :class:`~fiftyone_pipeline_did.fod_id.FodIdParseStatus` either way. Parsing
@@ -66,12 +73,14 @@ from .did_client import (
 from ._owid import Owid, OwidError, SignatureStatus
 from .fod_id import DATE_EPOCH, FodId, FodIdParseResult, FodIdParseStatus
 from .id_type import IdType
+from .usage import Usage
 
 __all__ = [
     "FodId",
     "FodIdParseResult",
     "FodIdParseStatus",
     "IdType",
+    "Usage",
     "DATE_EPOCH",
     "DidClient",
     "RedeemResult",
