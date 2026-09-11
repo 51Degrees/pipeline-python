@@ -62,11 +62,11 @@ class FodIdParseStatus(Enum):
     """Why reading a 51Did succeeded or failed.
 
     The vocabulary is the OWID one, member for member and value for value,
-    with two members added for the checks this package makes on the payload
-    once the envelope has been read. A failure in the envelope keeps the
-    OWID status unchanged, so a caller sees the same reason whichever
+    with three members added for the checks this package makes on the
+    payload once the envelope has been read. A failure in the envelope keeps
+    the OWID status unchanged, so a caller sees the same reason whichever
     language read the bytes, and a failure in the payload names which of the
-    two 51Did rules was broken.
+    three 51Did rules was broken.
 
     Every member other than :attr:`PARSED` is an expected outcome for data
     that arrived from outside, not a fault in the program. A parse that
@@ -177,8 +177,8 @@ class FodId:
     Payload layout. Every field has a typed accessor here, being
     :attr:`type`, :attr:`usage`, :attr:`usage_from_consent`,
     :attr:`license_id`, :attr:`match_key` and :attr:`terms`, and those
-    accessors are the supported way to read an identifier. The bytes and offsets behind them
-    are specified at
+    accessors are the supported way to read an identifier. The bytes and
+    offsets behind them are specified at
     https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
     and the surface this class offers, which is the same in every 51Did
     package, at
@@ -257,8 +257,8 @@ class FodId:
     @classmethod
     def _from_read(cls, read: ParseResult) -> FodIdParseResult:
         """The non-raising reader over an OWID read. Carries an OWID failure
-        through unchanged, then applies the two 51Did payload rules, and
-        builds the identifier only when both have passed."""
+        through unchanged, then applies the three 51Did payload rules, and
+        builds the identifier only when all of them have passed."""
         if not read.ok:
             return _failed(FodIdParseStatus.of(read.status))
         status, flags, license_id, match_key, terms_index = _read_payload(
@@ -549,10 +549,11 @@ def _date_minutes(fod_id: "FodId") -> int:
 
 def _read_payload(
         payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes, int]:
-    """Applies the two 51Did payload rules and unpacks the four fields.
+    """Applies the three 51Did payload rules and unpacks the four fields.
 
-    The header must be present before the type can be read, and the type
-    then says how many match key bytes must follow. The Terms byte follows
+    The header must be present before the type can be read, the version it
+    carries must be one this package reads, and the type then says how many
+    match key bytes must follow. The Terms byte follows
     the match key, and anything beyond it is a creator context section
     whose lengths belong to the cloud, so a longer payload passes. A
     Reserved type has no known match key length and keeps the documented

@@ -40,21 +40,29 @@ class Terms(Enum):
     repointed once published. It is specified at
     https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
 
-    :attr:`NOT_STATED` and :attr:`UNKNOWN` are different answers and must
-    never be read as the same one. :attr:`NOT_STATED` says this identifier
-    does not carry the answer, so the answer has to come from somewhere
-    else, being the Terms Document Locator in an OpenRTB request or
-    whatever the surrounding protocol provides, and it does not mean the
-    identifier is unrestricted. :attr:`UNKNOWN` says the identifier does
-    state its terms and that this package cannot name them, because the
-    index was added after the package was released. A caller meeting
-    :attr:`UNKNOWN` should treat the identifier as covered by terms it
-    cannot yet read, and either update the package or refuse the
-    identifier.
+    :attr:`NOT_STATED` and :attr:`UNKNOWN` are separate members here
+    because the index they came from is different, and they reach a caller
+    as one answer because neither names a document. :attr:`NOT_STATED` is
+    index 0 and says the identifier does not carry the answer, so it has
+    to come from somewhere else, being the Terms Document Locator in an
+    OpenRTB request or whatever the surrounding protocol provides, and it
+    does not mean the identifier is unrestricted. :attr:`UNKNOWN` stands
+    for an index added after this package was released, so the identifier
+    does state its terms and this package cannot name them.
 
-    The members carry a name and not the index, because :attr:`UNKNOWN`
-    stands for any index this package does not know and so has no single
-    index to carry.
+    Both answer :attr:`url` with ``None``, which is what
+    :attr:`~fiftyone_pipeline_did.FodId.terms` hands a caller, so the two
+    cannot be told apart from outside the package. That is deliberate and
+    the specification requires it, because both leave a caller in the same
+    place, being that the identifier does not give them the terms and they
+    have to look elsewhere. What must never happen is an address composed
+    from an index the table does not carry, since that would name a
+    document nobody wrote, which is why :attr:`UNKNOWN` exists as a member
+    rather than the lookup falling back to :attr:`NOT_STATED`.
+
+    Every member carries the index it is written as in a payload, and
+    :attr:`UNKNOWN` carries -1 because it stands for every index the table
+    does not carry and so has none of its own.
 
     This module is private to the package, as its underscore name says. The
     package turns the index into the address that
@@ -75,9 +83,11 @@ class Terms(Enum):
     #: https://m4ow.uk/mtm/2.txt
     MODEL_TERMS_FOR_MARKETING_2 = (1, "https://m4ow.uk/mtm/2.txt")
     #: An index added after this package was released, so the identifier
-    #: states terms this package cannot name. Never treat it as
-    #: :attr:`NOT_STATED`, which would read an identifier created under
-    #: terms as one created under none.
+    #: states terms this package cannot name. It is a member of its own
+    #: rather than :attr:`NOT_STATED` so that the table keeps saying what
+    #: the payload said, being that terms were stated, and so that no
+    #: later reader of this module mistakes the index for one the table
+    #: carries and composes an address from it.
     #: Its index is -1 rather than a real one. A Terms index read from a
     #: payload is one byte, so it is 0 to 255 and can never be negative,
     #: which is what makes -1 safe as the index that is not in the table.

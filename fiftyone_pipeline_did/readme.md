@@ -199,6 +199,11 @@ The version is not exposed. Either this package read the layout, in which
 case the accessors are the answer, or it did not, in which case there is
 no identifier to read fields from.
 
+No identifier already issued is refused by this. The two bits held no
+field before the version was defined and every issuer wrote them as zero,
+which is version 0, so an identifier from before the field existed reads
+exactly as it did.
+
 The raw flags byte, the byte layout constants and the old `hash` names are
 not part of this package. `fod_id.flags`, `fod_id.hash`,
 `fod_id.date_minutes`, `FodId.MATCH_KEY_OFFSET` and every other offset and
@@ -251,7 +256,7 @@ reason.
 ### Status meanings
 
 The `FodIdParseStatus` vocabulary is the OWID one, member for member and
-value for value, plus two members for the payload rules this package
+value for value, plus three members for the payload rules this package
 applies once the envelope has been read. A failure inside the envelope is
 carried through with the OWID status unchanged, so the reason reads the
 same whichever language parsed the bytes.
@@ -271,6 +276,7 @@ same whichever language parsed the bytes.
 | `MALFORMED_ENVELOPE` | Malformed in a way none of the above describes |
 | `PAYLOAD_TOO_SHORT` | The envelope was read but the payload is shorter than the 5 byte header, so the type cannot be read |
 | `INVALID_TYPE_PAYLOAD_LENGTH` | The header names a type whose match key needs more bytes than the payload holds |
+| `UNSUPPORTED_PAYLOAD_VERSION` | Bits 4 and 5 of the flags byte name a payload layout version this package does not know, so no field is read |
 
 ### Lower bounds and no upper bound
 
@@ -302,12 +308,14 @@ from the `try_` readers and never an exception. The raising readers,
 `from_base64`, `from_byte_array`, `from_owid` and the constructor, read
 through the same logic and keep their documented exceptions for callers
 who prefer them, being `TypeError` for `None` or a wrong input type,
-`ValueError` for `PAYLOAD_TOO_SHORT` and `INVALID_TYPE_PAYLOAD_LENGTH`,
-and `OwidError` for every other status, with the message naming the
-status. Signature verification against a key that cannot be decoded, a
-key list that cannot be fetched, and a cloud answer other than the one
-asked for remain exceptions, because they are faults in the surroundings
-and not properties of the identifier.
+`ValueError` for `PAYLOAD_TOO_SHORT`, `INVALID_TYPE_PAYLOAD_LENGTH` and
+`UNSUPPORTED_PAYLOAD_VERSION`, and `OwidError` for every other status,
+with the message naming the status. The three raising `ValueError` are
+the three the payload rules produce, whilst every other status comes
+from the envelope. Signature verification against a key that cannot be
+decoded, a key list that cannot be fetched, and a cloud answer other than
+the one asked for remain exceptions, because they are faults in the
+surroundings and not properties of the identifier.
 
 ### Migrating from the removed OWID API
 

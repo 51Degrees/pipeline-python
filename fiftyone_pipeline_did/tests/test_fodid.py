@@ -73,6 +73,18 @@ CANONICAL_MATCH_KEY = bytes((0x20 + i) for i in range(MATCH_KEY_LENGTH))
 #: self-hosted container may be configured to use.
 LONG_DOMAIN = "identifiers." + ("a" * 120) + ".example"
 
+#: The address the specification gives for Terms index 1, the Model Terms
+#: for Marketing version 2.
+MODEL_TERMS_URL = "https://m4ow.uk/mtm/2.txt"
+#: The Terms index of the Model Terms for Marketing version 2.
+MODEL_TERMS_INDEX = 1
+#: An index the specification has not assigned, standing for one added
+#: after this package was released.
+UNKNOWN_TERMS_INDEX = 200
+#: A creator context section. How long a section is belongs to the cloud
+#: and changes with the section version, so an arbitrary length is used.
+CONTEXT_SECTION = bytes(range(1, 24))
+
 
 def _write_license_id(payload):
     # Little-endian: low byte first (0x12345678 -> 78 56 34 12).
@@ -80,6 +92,12 @@ def _write_license_id(payload):
     payload[LICENSE_ID_OFFSET + 1] = 0x56
     payload[LICENSE_ID_OFFSET + 2] = 0x34
     payload[LICENSE_ID_OFFSET + 3] = 0x12
+
+
+def with_terms(payload, index):
+    """The payload with a Terms byte after the match key, which is where
+    the specification puts it."""
+    return bytearray(bytes(payload) + bytes([index]))
 
 
 def payload_ending_at_match_key():
@@ -102,25 +120,6 @@ def canonical_payload():
     document a personalized marketing identifier is created under. This
     is the creating side, so it writes every field an issuer writes."""
     return with_terms(payload_ending_at_match_key(), MODEL_TERMS_INDEX)
-
-
-#: The address the specification gives for Terms index 1, the Model Terms
-#: for Marketing version 2.
-MODEL_TERMS_URL = "https://m4ow.uk/mtm/2.txt"
-#: The Terms index of the Model Terms for Marketing version 2.
-MODEL_TERMS_INDEX = 1
-#: An index the specification has not assigned, standing for one added
-#: after this package was released.
-UNKNOWN_TERMS_INDEX = 200
-#: A creator context section. How long a section is belongs to the cloud
-#: and changes with the section version, so an arbitrary length is used.
-CONTEXT_SECTION = bytes(range(1, 24))
-
-
-def with_terms(payload, index):
-    """The payload with a Terms byte after the match key, which is where
-    the specification puts it."""
-    return bytearray(bytes(payload) + bytes([index]))
 
 
 def random_payload_ending_at_match_key():
@@ -638,7 +637,7 @@ class FodIdTryParseTests(unittest.TestCase):
         fod = self.assert_parsed(FodId.try_from_byte_array(raw))
         self.assertFalse(fod.verify(self.factory.public_pem))
 
-    # ----- The two 51Did payload rules -----
+    # ----- The three 51Did payload rules -----
 
     def test_short_random_payload_reports_invalid_type_payload_length(self):
         payload = canonical_random_payload()[:RANDOM_PAYLOAD_LENGTH - 1]
@@ -839,6 +838,7 @@ class FodIdTryParseTests(unittest.TestCase):
         self.assertEqual(raising.as_byte_array(),
                          result.value.as_byte_array())
         self.assertEqual(raising.match_key, result.value.match_key)
+
 
 class FodIdTermsTests(unittest.TestCase):
     """The Terms byte, which says which terms document the identifier was
@@ -1158,6 +1158,7 @@ class TermsTests(unittest.TestCase):
         # named value is not exported from the package.
         import fiftyone_pipeline_did as package
         self.assertFalse(hasattr(package, "Terms"))
+
 
 if __name__ == "__main__":
     unittest.main()
