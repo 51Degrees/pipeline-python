@@ -27,7 +27,6 @@ from enum import Enum
 from typing import NamedTuple, Optional, Tuple
 
 from ._layout import (
-    ABSENT_TERMS_INDEX,
     FLAGS_OFFSET,
     GUID_LENGTH,
     HEADER_LENGTH,
@@ -608,7 +607,9 @@ def _read_terms_index(payload: bytes, offset: int) -> int:
     and not a defect, so no special case is written for it.
     """
     if len(payload) < offset + TERMS_LENGTH:
-        return ABSENT_TERMS_INDEX
+        # Read off the table rather than written here a second time, so the
+        # index that says the terms are not stated is recorded once.
+        return Terms.NOT_STATED.index
     return payload[offset]
 
 

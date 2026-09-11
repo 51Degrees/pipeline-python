@@ -47,7 +47,6 @@ from fiftyone_pipeline_did._terms import Terms
 # https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
 # says the package's own tests may.
 from fiftyone_pipeline_did._layout import (
-    ABSENT_TERMS_INDEX,
     FLAGS_OFFSET,
     GUID_LENGTH,
     HEADER_LENGTH,
@@ -136,7 +135,7 @@ def canonical_random_payload():
     """The canonical Random payload as an issuer writes one, carrying the
     zero Terms byte a non-marketing identifier carries."""
     return with_terms(
-        random_payload_ending_at_match_key(), ABSENT_TERMS_INDEX)
+        random_payload_ending_at_match_key(), Terms.NOT_STATED.index)
 
 
 def with_payload_version(payload, version):
@@ -875,7 +874,7 @@ class FodIdTermsTests(unittest.TestCase):
     def test_an_absent_byte_and_a_zero_byte_read_the_same(self):
         absent = self._read(payload_ending_at_match_key())
         stated = self._read(with_terms(payload_ending_at_match_key(),
-                                       ABSENT_TERMS_INDEX))
+                                       Terms.NOT_STATED.index))
         self.assertEqual(absent.terms, stated.terms)
         self.assertIsNone(absent.terms)
         self.assertIsNone(stated.terms)
@@ -919,7 +918,7 @@ class FodIdTermsTests(unittest.TestCase):
         unknown = self._read(with_terms(payload_ending_at_match_key(),
                                         UNKNOWN_TERMS_INDEX))
         none = self._read(with_terms(payload_ending_at_match_key(),
-                                     ABSENT_TERMS_INDEX))
+                                     Terms.NOT_STATED.index))
         self.assertIsNone(none.terms)
         self.assertIsNone(unknown.terms)
 
@@ -954,7 +953,7 @@ class FodIdTermsTests(unittest.TestCase):
         # start of the context section, so a section opening with a zero
         # reads as terms that are not stated.
         built = (with_terms(payload_ending_at_match_key(),
-                            ABSENT_TERMS_INDEX)
+                            Terms.NOT_STATED.index)
                  + CONTEXT_SECTION)
         fod = self._read(built)
         self.assertIsNone(fod.terms)
@@ -1104,7 +1103,6 @@ class TermsTests(unittest.TestCase):
 
     def test_the_layout_gives_the_terms_one_byte(self):
         self.assertEqual(1, TERMS_LENGTH)
-        self.assertEqual(0, ABSENT_TERMS_INDEX)
 
     def test_from_index_names_the_indexes_the_package_knows(self):
         self.assertIs(Terms.NOT_STATED, Terms.from_index(0))

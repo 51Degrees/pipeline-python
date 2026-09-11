@@ -69,8 +69,3 @@ TERMS_LENGTH = 1
 #: of the flags byte. Any other version is refused rather than read under
 #: this layout.
 SUPPORTED_PAYLOAD_VERSION = 0
-#: The Terms index a payload with no byte after the match key reads as,
-#: being the index that says the terms are not stated in the identifier.
-#: Absence and zero mean the same thing and neither has to be told apart
-#: from the other.
-ABSENT_TERMS_INDEX = 0

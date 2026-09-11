@@ -33,12 +33,15 @@ from owid import Crypto, Owid, Version
 from owid import io as owid_io
 
 from fiftyone_pipeline_did import FodId
+# The named terms value is private to the package and is not exported, so
+# the payload builders here reach the private module directly, as the
+# package surface page says the package's own tests may.
+from fiftyone_pipeline_did._terms import Terms
 # The byte layout is not part of the package's public surface. These tests
 # build payloads byte by byte, so they read it from the private module, as
 # https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
 # says the package's own tests may.
 from fiftyone_pipeline_did._layout import (
-    ABSENT_TERMS_INDEX,
     FLAGS_OFFSET,
     GUID_LENGTH,
     LICENSE_ID_OFFSET,
@@ -80,7 +83,7 @@ def context_payload():
     stated in the identifier, and then a creator context section. How long
     a section is belongs to the cloud and changes with the section version,
     so an arbitrary length is used here."""
-    return (probabilistic_payload() + bytes([ABSENT_TERMS_INDEX])
+    return (probabilistic_payload() + bytes([Terms.NOT_STATED.index])
             + bytes(range(1, 24)))
 
 
