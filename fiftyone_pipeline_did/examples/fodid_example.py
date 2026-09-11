@@ -24,8 +24,8 @@
 
 The 51Degrees Cloud service issues real 51Dids. To keep this example
 self-contained and offline, it builds a sample 51Did in process - generate an
-ECDSA P-256 key pair, sign a canonical 37-byte payload - then parses it back
-and prints the three payload fields. It also shows the headline use case: a
+ECDSA P-256 key pair, sign a canonical 38-byte payload - then parses it back
+and prints the payload fields. It also shows the headline use case: a
 51Did is re-issued fresh on every call (the envelope, hence the base64,
 changes), but the match key is stable. Compare match keys, never
 envelopes.
@@ -42,20 +42,27 @@ DOMAIN = "51degrees.com"
 # from the package, which does not publish it. The layout is
 # specified at
 # https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md
-SAMPLE_FLAGS = 0b0000_0011      # standard usage, Probabilistic type
-SAMPLE_PAYLOAD_LENGTH = 37      # 1 flags byte, 4 licence id, 32 key
+SAMPLE_FLAGS = 0b0000_0011      # standard usage, payload version 0,
+                                # Probabilistic type
+SAMPLE_PAYLOAD_LENGTH = 38      # 1 flags byte, 4 licence id, 32 key,
+                                # 1 terms
 SAMPLE_MATCH_KEY_OFFSET = 5
 SAMPLE_MATCH_KEY_LENGTH = 32
+SAMPLE_TERMS_OFFSET = 37        # the Terms byte follows the match key
+SAMPLE_TERMS = 1                # index 1, the Model Terms for Marketing
+                                # version 2
 
 
 def sample_payload():
-    """A canonical 37-byte Probabilistic payload: the flags byte, License
-    Id 0x12345678 (little-endian) and a 32-byte match key 0x20..0x3F."""
+    """A canonical 38-byte Probabilistic payload: the flags byte, License
+    Id 0x12345678 (little-endian), a 32-byte match key 0x20..0x3F and the
+    Terms byte."""
     payload = bytearray(SAMPLE_PAYLOAD_LENGTH)
     payload[0] = SAMPLE_FLAGS
     payload[1:5] = bytes([0x78, 0x56, 0x34, 0x12])
     for i in range(SAMPLE_MATCH_KEY_LENGTH):
         payload[SAMPLE_MATCH_KEY_OFFSET + i] = 0x20 + i
+    payload[SAMPLE_TERMS_OFFSET] = SAMPLE_TERMS
     return bytes(payload)
 
 
@@ -83,6 +90,9 @@ def run():
     print("  Consent   :", fod_id.usage_from_consent)
     print("  LicenseId :", fod_id.license_id)
     print("  Match key :", fod_id.match_key.hex())
+    # The address is answered and never fetched. What to do with the
+    # document is the receiver's decision.
+    print("  Terms     :", fod_id.terms)
     print("  Verifies  :", fod_id.verify(crypto.public_key_pem()))
 
     reissued = FodId.from_base64(issue(creator, payload))

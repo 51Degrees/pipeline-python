@@ -37,6 +37,11 @@ from fiftyone_pipeline_did import (
     SignatureStatus,
 )
 
+# The named terms value is private to the package and is not exported, so
+# the vocabulary tests below reach the private module directly, as the
+# package surface page says the package's own tests may.
+from fiftyone_pipeline_did._terms import Terms
+
 # The byte layout is not part of the package's public surface. These tests
 # build payloads byte by byte, so they read it from the private module, as
 # https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
@@ -51,18 +56,33 @@ from fiftyone_pipeline_did._layout import (
     MATCH_KEY_OFFSET,
     PAYLOAD_LENGTH,
     RANDOM_PAYLOAD_LENGTH,
+    SUPPORTED_PAYLOAD_VERSION,
+    TERMS_LENGTH,
 )
 from .envelope import envelope_bytes, signed_envelope
 
 TEST_DOMAIN = "51degrees.com"
-# 0xA5: usage bits plus the HashedEmail type tag in bits 6-7.
-CANONICAL_FLAGS = 0xA5
+# 0x85: the personalized marketing usage in bits 0-2, the payload version 0
+# in bits 4-5 and the HashedEmail type tag in bits 6-7.
+CANONICAL_FLAGS = 0x85
 CANONICAL_LICENSE_ID = 0x12345678
 CANONICAL_MATCH_KEY = bytes((0x20 + i) for i in range(MATCH_KEY_LENGTH))
 
 #: A creator domain longer than the one the cloud signs with, as a
 #: self-hosted container may be configured to use.
 LONG_DOMAIN = "identifiers." + ("a" * 120) + ".example"
+
+#: The address the specification gives for Terms index 1, the Model Terms
+#: for Marketing version 2.
+MODEL_TERMS_URL = "https://m4ow.uk/mtm/2.txt"
+#: The Terms index of the Model Terms for Marketing version 2.
+MODEL_TERMS_INDEX = 1
+#: An index the specification has not assigned, standing for one added
+#: after this package was released.
+UNKNOWN_TERMS_INDEX = 200
+#: A creator context section. How long a section is belongs to the cloud
+#: and changes with the section version, so an arbitrary length is used.
+CONTEXT_SECTION = bytes(range(1, 24))
 
 
 def _write_license_id(payload):
@@ -73,7 +93,17 @@ def _write_license_id(payload):
     payload[LICENSE_ID_OFFSET + 3] = 0x12
 
 
-def canonical_payload():
+def with_terms(payload, index):
+    """The payload with a Terms byte after the match key, which is where
+    the specification puts it."""
+    return bytearray(bytes(payload) + bytes([index]))
+
+
+def payload_ending_at_match_key():
+    """The canonical payload cut off at the end of the match key, so it
+    carries no Terms byte. A reader takes that as a Terms of zero, and
+    this is the fixture for that rule rather than anything an issuer
+    would write."""
     payload = bytearray(PAYLOAD_LENGTH)
     payload[FLAGS_OFFSET] = CANONICAL_FLAGS
     _write_license_id(payload)
@@ -83,13 +113,38 @@ def canonical_payload():
     return bytearray(payload)
 
 
-def canonical_random_payload():
+def canonical_payload():
+    """The canonical payload as an issuer writes one, carrying the
+    payload version 0 in its flags byte and the Terms byte of the
+    document a personalized marketing identifier is created under. This
+    is the creating side, so it writes every field an issuer writes."""
+    return with_terms(payload_ending_at_match_key(), MODEL_TERMS_INDEX)
+
+
+def random_payload_ending_at_match_key():
+    """The canonical Random payload cut off at the end of its GUID."""
     payload = bytearray(RANDOM_PAYLOAD_LENGTH)
     payload[FLAGS_OFFSET] = (1 << 6) | 0b001  # Random tag + usage bits
     _write_license_id(payload)
     for i in range(GUID_LENGTH):
         payload[MATCH_KEY_OFFSET + i] = 0x40 + i
     return bytearray(payload)
+
+
+def canonical_random_payload():
+    """The canonical Random payload as an issuer writes one, carrying the
+    zero Terms byte a non-marketing identifier carries."""
+    return with_terms(
+        random_payload_ending_at_match_key(), Terms.NOT_STATED.index)
+
+
+def with_payload_version(payload, version):
+    """The payload with its version bits set to the given version, leaving
+    every other bit of the flags byte alone."""
+    changed = bytearray(payload)
+    changed[FLAGS_OFFSET] = (
+        (payload[FLAGS_OFFSET] & 0b1100_1111) | (version << 4))
+    return changed
 
 
 class FodIdTestFactory:
@@ -214,11 +269,15 @@ class FodIdTests(unittest.TestCase):
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(0, fod._flags)
 
-    def test_flags_byte_of_all_bits_set_is_read(self):
+    def test_every_flags_bit_outside_the_version_is_read(self):
+        # Bits 4 and 5 are the payload version and only version 0 is read,
+        # so every other bit is set and those two are left clear. A payload
+        # with them set is refused rather than read, which
+        # FodIdVersionTests covers.
         payload = canonical_payload()
-        payload[FLAGS_OFFSET] = 0xFF
+        payload[FLAGS_OFFSET] = 0xCF
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
-        self.assertEqual(255, fod._flags)
+        self.assertEqual(0xCF, fod._flags)
 
     def test_match_key_is_immutable(self):
         fod = FodId.from_base64(
@@ -487,9 +546,9 @@ class FodIdTryParseTests(unittest.TestCase):
 
     # ----- Vocabulary -----
 
-    def test_status_vocabulary_is_the_owid_one_plus_two(self):
+    def test_status_vocabulary_is_the_owid_one_plus_three(self):
         # Every OWID status has a member of the same name and value, so an
-        # OWID failure is carried through unchanged, and the two 51Did
+        # OWID failure is carried through unchanged, and the three 51Did
         # payload statuses are the only additions.
         for status in ParseStatus:
             member = FodIdParseStatus.of(status)
@@ -498,7 +557,12 @@ class FodIdTryParseTests(unittest.TestCase):
         owid_names = {status.name for status in ParseStatus}
         extra = {member.name for member in FodIdParseStatus} - owid_names
         self.assertEqual(
-            {"PAYLOAD_TOO_SHORT", "INVALID_TYPE_PAYLOAD_LENGTH"}, extra)
+            {
+                "PAYLOAD_TOO_SHORT",
+                "INVALID_TYPE_PAYLOAD_LENGTH",
+                "UNSUPPORTED_PAYLOAD_VERSION",
+            },
+            extra)
 
     def test_result_is_immutable_and_carries_exactly_three_facts(self):
         result = FodId.try_from_base64(
@@ -572,7 +636,7 @@ class FodIdTryParseTests(unittest.TestCase):
         fod = self.assert_parsed(FodId.try_from_byte_array(raw))
         self.assertFalse(fod.verify(self.factory.public_pem))
 
-    # ----- The two 51Did payload rules -----
+    # ----- The three 51Did payload rules -----
 
     def test_short_random_payload_reports_invalid_type_payload_length(self):
         payload = canonical_random_payload()[:RANDOM_PAYLOAD_LENGTH - 1]
@@ -773,6 +837,325 @@ class FodIdTryParseTests(unittest.TestCase):
         self.assertEqual(raising.as_byte_array(),
                          result.value.as_byte_array())
         self.assertEqual(raising.match_key, result.value.match_key)
+
+
+class FodIdTermsTests(unittest.TestCase):
+    """The Terms byte, which says which terms document the identifier was
+    created under so that the terms travel with the identifier. The byte is
+    an index into a table in the specification and not a version number,
+    and it follows the match key, so the identifier type fixes where it
+    sits. The package turns the index into the address, so ``terms``
+    answers with the address and a caller never handles the byte.
+    """
+
+    def setUp(self):
+        self.factory = FodIdTestFactory()
+
+    def _read(self, payload):
+        return FodId.from_base64(self.factory.signed_owid_base64(payload))
+
+    # ----- A payload that ends at the match key -----
+
+    def test_payload_ending_at_the_match_key_has_no_address(self):
+        # There is no byte after the match key to read. A missing byte is
+        # index 0, which says the terms are not stated in the identifier,
+        # so absence and zero mean the same thing and no presence flag is
+        # needed to tell them apart.
+        for name, payload, length in (
+                ("probabilistic", payload_ending_at_match_key(),
+                 MATCH_KEY_LENGTH),
+                ("random", random_payload_ending_at_match_key(),
+                 GUID_LENGTH)):
+            with self.subTest(name):
+                fod = self._read(payload)
+                self.assertIsNone(fod.terms)
+                self.assertEqual(length, len(fod.match_key))
+
+    def test_an_absent_byte_and_a_zero_byte_read_the_same(self):
+        absent = self._read(payload_ending_at_match_key())
+        stated = self._read(with_terms(payload_ending_at_match_key(),
+                                       Terms.NOT_STATED.index))
+        self.assertEqual(absent.terms, stated.terms)
+        self.assertIsNone(absent.terms)
+        self.assertIsNone(stated.terms)
+
+    # ----- An index this package knows -----
+
+    def test_index_one_answers_with_the_model_terms_address(self):
+        for name, payload, length in (
+                ("probabilistic", payload_ending_at_match_key(),
+                 MATCH_KEY_LENGTH),
+                ("random", random_payload_ending_at_match_key(),
+                 GUID_LENGTH)):
+            with self.subTest(name):
+                fod = self._read(with_terms(payload, MODEL_TERMS_INDEX))
+                self.assertEqual(MODEL_TERMS_URL, fod.terms)
+                self.assertEqual(length, len(fod.match_key))
+
+    def test_the_address_is_the_versioned_document(self):
+        # The address names the exact document in force when the
+        # identifier was made, because a receiver has to be able to check
+        # years later what it agreed to, and an address whose contents can
+        # be edited cannot answer that.
+        fod = self._read(with_terms(payload_ending_at_match_key(),
+                                    MODEL_TERMS_INDEX))
+        self.assertEqual("https://m4ow.uk/mtm/2.txt", fod.terms)
+
+    # ----- An index this package does not know -----
+
+    def test_an_unknown_index_has_no_address(self):
+        # No address is ever built from an index this package cannot name,
+        # because that would name a document nobody wrote and a receiver
+        # would record having accepted terms that do not exist.
+        fod = self._read(with_terms(payload_ending_at_match_key(),
+                                    UNKNOWN_TERMS_INDEX))
+        self.assertIsNone(fod.terms)
+
+    def test_an_unknown_index_answers_as_no_terms_stated_does(self):
+        # A caller cannot tell the two apart, which is deliberate, since
+        # both say the identifier does not give the terms and the answer
+        # has to come from somewhere else.
+        unknown = self._read(with_terms(payload_ending_at_match_key(),
+                                        UNKNOWN_TERMS_INDEX))
+        none = self._read(with_terms(payload_ending_at_match_key(),
+                                     Terms.NOT_STATED.index))
+        self.assertIsNone(none.terms)
+        self.assertIsNone(unknown.terms)
+
+    def test_every_index_the_package_does_not_know_has_no_address(self):
+        for index in (2, 3, 127, 128, 255):
+            with self.subTest(index=index):
+                fod = self._read(
+                    with_terms(payload_ending_at_match_key(), index))
+                self.assertIsNone(fod.terms)
+                self.assertIs(Terms.UNKNOWN, Terms.from_index(index))
+
+    # ----- The byte is read at the right offset -----
+
+    def test_terms_is_read_before_a_creator_context_section(self):
+        # The bytes after the Terms are a creator context section whose
+        # lengths belong to the cloud, so the byte has to be read at the
+        # offset the match key ends at and not at the end of the payload.
+        for name, payload, key in (
+                ("probabilistic", payload_ending_at_match_key(),
+                 CANONICAL_MATCH_KEY),
+                ("random", random_payload_ending_at_match_key(),
+                 bytes((0x40 + i) for i in range(GUID_LENGTH)))):
+            with self.subTest(name):
+                built = (with_terms(payload, MODEL_TERMS_INDEX)
+                         + CONTEXT_SECTION)
+                fod = self._read(built)
+                self.assertEqual(key, fod.match_key)
+                self.assertEqual(MODEL_TERMS_URL, fod.terms)
+
+    def test_a_context_section_alone_does_not_state_terms(self):
+        # The first byte after the match key is the Terms and not the
+        # start of the context section, so a section opening with a zero
+        # reads as terms that are not stated.
+        built = (with_terms(payload_ending_at_match_key(),
+                            Terms.NOT_STATED.index)
+                 + CONTEXT_SECTION)
+        fod = self._read(built)
+        self.assertIsNone(fod.terms)
+        self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
+
+    def test_reserved_type_takes_every_byte_as_its_match_key(self):
+        # A Reserved type has no defined match key length, so its
+        # documented best-effort reading takes every byte after the header
+        # and leaves none to read as the Terms. It therefore states no
+        # terms.
+        payload = payload_ending_at_match_key()
+        payload[FLAGS_OFFSET] = 0b1100_0101
+        fod = self._read(with_terms(payload, MODEL_TERMS_INDEX))
+        self.assertIs(IdType.RESERVED, fod.type)
+        self.assertIsNone(fod.terms)
+
+    # ----- The same answer from every reader -----
+
+    def test_every_reader_reads_the_same_terms(self):
+        payload = with_terms(payload_ending_at_match_key(),
+                             MODEL_TERMS_INDEX)
+        base64 = self.factory.signed_owid_base64(payload)
+        owid = self.factory.signed_owid(payload)
+        readers = (
+            FodId.from_base64(base64),
+            FodId.from_byte_array(self.factory.signed_bytes(payload)),
+            FodId.from_owid(owid),
+            FodId(owid),
+            FodId.try_from_base64(base64).value,
+            FodId.try_from_byte_array(
+                self.factory.signed_bytes(payload)).value,
+        )
+        for fod in readers:
+            self.assertEqual(MODEL_TERMS_URL, fod.terms)
+
+    def test_base64_roundtrip_preserves_the_terms(self):
+        first = self._read(with_terms(payload_ending_at_match_key(),
+                                      MODEL_TERMS_INDEX))
+        for base64 in (first.as_base64(), first.as_base64_url()):
+            fod = FodId.from_base64(base64)
+            self.assertEqual(first.terms, fod.terms)
+            self.assertEqual(MODEL_TERMS_URL, fod.terms)
+
+    def test_terms_does_not_change_how_the_other_fields_read(self):
+        # The byte must not move any field before it, so an identifier
+        # reads the same with the byte and without.
+        without = self._read(payload_ending_at_match_key())
+        stated = self._read(with_terms(payload_ending_at_match_key(),
+                                       MODEL_TERMS_INDEX))
+        self.assertEqual(without.type, stated.type)
+        self.assertEqual(without.usage, stated.usage)
+        self.assertEqual(without.usage_from_consent,
+                         stated.usage_from_consent)
+        self.assertEqual(without.license_id, stated.license_id)
+        self.assertEqual(without.match_key, stated.match_key)
+
+    def test_the_payload_rules_are_unchanged_by_the_terms(self):
+        # A payload one byte short of its match key still fails, and a
+        # Terms byte written onto it only makes up the match key, because
+        # the type says how many bytes the match key takes and only then
+        # does the Terms begin.
+        short = random_payload_ending_at_match_key()[
+            :RANDOM_PAYLOAD_LENGTH - 1]
+        result = FodId.try_from_base64(
+            self.factory.signed_owid_base64(short))
+        self.assertFalse(result.ok)
+        self.assertIs(FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH,
+                      result.status)
+        fod = self._read(with_terms(short, MODEL_TERMS_INDEX))
+        self.assertEqual(GUID_LENGTH, len(fod.match_key))
+        self.assertIsNone(fod.terms)
+
+
+class FodIdVersionTests(unittest.TestCase):
+    """Bits 4 and 5 of the flags byte, being the payload layout version.
+    This package reads version 0 and refuses every other version rather
+    than reading fields that may have moved.
+    """
+
+    def setUp(self):
+        self.factory = FodIdTestFactory()
+
+    def _read(self, payload):
+        return FodId.try_from_base64(
+            self.factory.signed_owid_base64(payload))
+
+    def test_version_zero_reads_every_field(self):
+        result = self._read(canonical_payload())
+        self.assertTrue(result.ok)
+        fod = result.value
+        self.assertIs(IdType.HASHED_EMAIL, fod.type)
+        self.assertIs(Usage.PERSONALIZED, fod.usage)
+        self.assertEqual(CANONICAL_LICENSE_ID, fod.license_id)
+        self.assertEqual(CANONICAL_MATCH_KEY, fod.match_key)
+        self.assertEqual(MODEL_TERMS_URL, fod.terms)
+
+    def test_the_layout_names_the_version_this_package_reads(self):
+        self.assertEqual(0, SUPPORTED_PAYLOAD_VERSION)
+
+    def test_an_unassigned_version_is_refused(self):
+        for version in (1, 2, 3):
+            with self.subTest(version=version):
+                result = self._read(
+                    with_payload_version(canonical_payload(), version))
+                self.assertFalse(result.ok)
+                self.assertIs(
+                    FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION,
+                    result.status)
+                # Nothing is handed back, rather than a value with some
+                # fields filled in, because there is no identifier to
+                # expose fields for when the layout was not understood.
+                self.assertIsNone(result.value)
+
+    def test_the_raising_readers_name_the_version(self):
+        for version in (1, 2, 3):
+            with self.subTest(version=version):
+                base64 = self.factory.signed_owid_base64(
+                    with_payload_version(canonical_payload(), version))
+                with self.assertRaises(ValueError) as caught:
+                    FodId.from_base64(base64)
+                self.assertIn("version {0}".format(version),
+                              str(caught.exception))
+
+    def test_the_version_is_read_apart_from_the_usage_and_type_bits(self):
+        # A reader masking the wrong bits would refuse a version 0
+        # identifier or let a later version through, so every combination
+        # is tried.
+        for usage in (0b000, 0b001, 0b011, 0b111):
+            for id_type in (0b00, 0b10, 0b11):
+                flags = (id_type << 6) | usage
+                payload = payload_ending_at_match_key()
+                payload[FLAGS_OFFSET] = flags
+                with self.subTest(flags=flags):
+                    self.assertTrue(self._read(payload).ok)
+                    for version in (1, 2, 3):
+                        refused = self._read(
+                            with_payload_version(payload, version))
+                        self.assertIs(
+                            FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION,
+                            refused.status)
+                        self.assertIsNone(refused.value)
+
+
+class TermsTests(unittest.TestCase):
+    """The Terms vocabulary on its own, without an identifier around it.
+    It is private to the package, so these tests reach it directly."""
+
+    def test_the_layout_gives_the_terms_one_byte(self):
+        self.assertEqual(1, TERMS_LENGTH)
+
+    def test_from_index_names_the_indexes_the_package_knows(self):
+        self.assertIs(Terms.NOT_STATED, Terms.from_index(0))
+        self.assertIs(Terms.MODEL_TERMS_FOR_MARKETING_2,
+                      Terms.from_index(1))
+
+    def test_from_index_names_every_other_index_unknown(self):
+        for index in range(2, 256):
+            self.assertIs(Terms.UNKNOWN, Terms.from_index(index))
+
+    def test_only_a_named_document_has_an_address(self):
+        self.assertIsNone(Terms.NOT_STATED.url)
+        self.assertIsNone(Terms.UNKNOWN.url)
+        self.assertEqual("https://m4ow.uk/mtm/2.txt",
+                         Terms.MODEL_TERMS_FOR_MARKETING_2.url)
+
+    def test_every_member_agrees_with_the_table(self):
+        # Each member carries its own index and address, and the index to
+        # member map is built from the members, so this fails if a member
+        # does not read back from its own index or if one that names a
+        # document was added without an address.
+        for member in Terms:
+            if member is Terms.UNKNOWN:
+                # Stands for every index the table does not carry, so it
+                # has no index of its own and no address.
+                self.assertEqual(-1, member.index)
+                self.assertIsNone(member.url)
+                continue
+            self.assertIs(
+                member, Terms.from_index(member.index),
+                "{0} does not read back from its own index".format(member))
+            if member is Terms.NOT_STATED:
+                # Names no document, so it has no address.
+                self.assertEqual(0, member.index)
+                self.assertIsNone(member.url)
+            else:
+                self.assertIsNotNone(
+                    member.url,
+                    "{0} names a document with no address".format(member))
+                self.assertTrue(member.url.startswith("https://"))
+
+    def test_no_two_members_share_an_index(self):
+        # One index stands for one document, so which document an
+        # identifier was created under never depends on the order the
+        # members happen to be written in.
+        indexes = [m.index for m in Terms if m.index >= 0]
+        self.assertEqual(len(indexes), len(set(indexes)))
+
+    def test_the_named_value_is_not_part_of_the_package_surface(self):
+        # The address on FodId is the whole of what a caller reads, so the
+        # named value is not exported from the package.
+        import fiftyone_pipeline_did as package
+        self.assertFalse(hasattr(package, "Terms"))
 
 
 if __name__ == "__main__":

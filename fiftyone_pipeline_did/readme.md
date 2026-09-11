@@ -14,6 +14,10 @@ Identifier) returned by the 51Degrees Cloud service. Mirrors the .NET
   the Flags and License Id, being a 32-byte SHA-256 for Probabilistic and
   HashedEmail identifiers, or 16 GUID bytes for Random. Two 51Dids for the
   same inputs share the same match key even though their envelopes differ.
+- The **Terms** is the byte after the match key that says which terms
+  document the identifier was created under, so the terms travel with the
+  identifier instead of alongside it. The package turns that byte into the
+  address of the document.
 
 **Comparing two 51Dids means comparing their match keys, never their
 envelopes.**
@@ -31,8 +35,11 @@ where the two ever disagree.
 In short, the payload opens with a header carrying the flags byte and the
 License Id, and the identifier type in that byte then fixes the length of
 the match key that follows, being 32 bytes for `PROBABILISTIC` and
-`HASHED_EMAIL`, 16 for `RANDOM`, and whatever remains for `RESERVED`.
-Identifiers issued before the type tag existed decode as `PROBABILISTIC`.
+`HASHED_EMAIL`, 16 for `RANDOM`, and whatever remains for `RESERVED`. The
+Terms byte follows the match key, and the bytes after it are a creator
+context section. Identifiers issued before the type tag existed decode as
+`PROBABILISTIC`, and a payload that ends at the match key reads as terms
+that are not stated.
 
 This package does not publish the offsets or the raw flags byte, and it
 does not need to, because every field has a typed accessor that reads it
@@ -93,6 +100,9 @@ from_consent = fod_id.usage_from_consent  # True when read from a consent
                                           # string the caller sent
 license_id = fod_id.license_id
 match_key = fod_id.match_key  # SHA-256 or GUID bytes, see type
+terms = fod_id.terms          # address of the terms document it was
+                              # created under, None where it names none
+                              # this package knows
 
 # Delegated OWID-level fields and operations.
 domain = fod_id.domain
@@ -129,6 +139,70 @@ byte. `fod_id.usage_from_consent` says whether the usage was worked out
 from an IAB consent string the caller sent rather than stated by the
 caller directly. Both are legitimate ways to arrive at a usage and it says
 nothing about which usage was reached.
+
+### The terms an identifier was created under
+
+`fod_id.terms` answers with the address of the terms document the
+identifier was created under, so the terms travel with the identifier
+instead of alongside it and a receiver can tell which document was in
+force when the identifier was made. The byte behind it is an index into a
+table of terms documents in the
+[layout specification](https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md),
+and the package turns the index into the address so a caller never handles
+the byte. The byte is an index and not a version number, so that a later
+document can live at any address rather than only at one the specification
+could compose from a number, and an index is never reused or repointed
+once published, because an identifier issued under it has to stay readable
+years later.
+
+| Index | Document | `fod_id.terms` |
+|------:|----------|----------------|
+| `0` | Not stated in the identifier | `None` |
+| `1` | Model Terms for Marketing, version 2 | `https://m4ow.uk/mtm/2.txt` |
+| any other | One this package cannot name | `None` |
+
+The answer is `None` where the identifier does not state its terms and
+where it states an index added after this package was released, using
+absence rather than an empty string. No address is ever built from an
+index this package cannot name, because that would name a document nobody
+wrote and a receiver would record having accepted terms that do not exist.
+A caller therefore cannot tell those two apart, which is deliberate, since
+both lead to the same place. This package answers with the address and
+never fetches it, because what to do with the document is the receiver's
+decision.
+
+No address does not mean the identifier is unrestricted. It says only that
+this identifier does not carry the answer, so the answer has to come from
+somewhere else, being the Terms Document Locator in an OpenRTB request or
+whatever the surrounding protocol provides.
+
+A payload with no byte after the match key reads as index 0, so absence
+and zero mean the same thing and no presence flag exists to tell them
+apart. The Usage and the Terms answer different questions and a
+receiver needs both, because the Usage says where an identifier may go and
+the Terms says under which document it was created.
+
+### The payload version
+
+Bits 4 and 5 of the flags byte say which payload layout the identifier
+follows, and this package reads version 0. A payload naming version 1, 2
+or 3 is refused with `FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION`, and
+the raising readers name the version they found in the message.
+
+No field is read under the layout this package knows once the version says
+otherwise. A later version exists precisely because a field moved, so
+reading such a payload here would answer with values that are wrong rather
+than absent, which is worse than refusing. A version that nothing checks
+protects nothing.
+
+The version is not exposed. Either this package read the layout, in which
+case the accessors are the answer, or it did not, in which case there is
+no identifier to read fields from.
+
+No identifier already issued is refused by this. The two bits held no
+field before the version was defined and every issuer wrote them as zero,
+which is version 0, so an identifier from before the field existed reads
+exactly as it did.
 
 The raw flags byte, the byte layout constants and the old `hash` names are
 not part of this package. `fod_id.flags`, `fod_id.hash`,
@@ -182,7 +256,7 @@ reason.
 ### Status meanings
 
 The `FodIdParseStatus` vocabulary is the OWID one, member for member and
-value for value, plus two members for the payload rules this package
+value for value, plus three members for the payload rules this package
 applies once the envelope has been read. A failure inside the envelope is
 carried through with the OWID status unchanged, so the reason reads the
 same whichever language parsed the bytes.
@@ -202,20 +276,24 @@ same whichever language parsed the bytes.
 | `MALFORMED_ENVELOPE` | Malformed in a way none of the above describes |
 | `PAYLOAD_TOO_SHORT` | The envelope was read but the payload is shorter than the 5 byte header, so the type cannot be read |
 | `INVALID_TYPE_PAYLOAD_LENGTH` | The header names a type whose match key needs more bytes than the payload holds |
+| `UNSUPPORTED_PAYLOAD_VERSION` | Bits 4 and 5 of the flags byte name a payload layout version this package does not know, so no field is read |
 
 ### Lower bounds and no upper bound
 
 The payload must hold the 5 byte header before the type can be read, and
 the type then says how many match key bytes must follow, being 16 for
 `RANDOM` and 32 for `PROBABILISTIC` and `HASHED_EMAIL`, as the payload
-layout specification says. `RESERVED` keeps the best-effort reading, being
-the header fields and whatever bytes follow. Anything beyond the match key
+layout specification says. The Terms byte follows the match key, and a
+payload ending at the match key reads as terms that are not stated.
+`RESERVED` keeps the best-effort reading, being the header fields and
+whatever bytes follow, and because no match key length is defined for it
+there is no byte left over to read as its Terms. Anything beyond the Terms
 is a creator context section whose lengths belong to the cloud, so a
 longer payload, a longer creator domain (a self-hosted container may sign
 with one) or a longer envelope is accepted and this package places no
 upper bound of its own on any of them. An older reader meeting a context
-section of a version it does not know still reads the header and the
-match key.
+section of a version it does not know still reads the header, the match
+key and the Terms.
 
 `DidClient` refuses text longer than 4096 characters before it parses
 it, fetches a key or calls the cloud. That figure is client policy,
@@ -230,12 +308,14 @@ from the `try_` readers and never an exception. The raising readers,
 `from_base64`, `from_byte_array`, `from_owid` and the constructor, read
 through the same logic and keep their documented exceptions for callers
 who prefer them, being `TypeError` for `None` or a wrong input type,
-`ValueError` for `PAYLOAD_TOO_SHORT` and `INVALID_TYPE_PAYLOAD_LENGTH`,
-and `OwidError` for every other status, with the message naming the
-status. Signature verification against a key that cannot be decoded, a
-key list that cannot be fetched, and a cloud answer other than the one
-asked for remain exceptions, because they are faults in the surroundings
-and not properties of the identifier.
+`ValueError` for `PAYLOAD_TOO_SHORT`, `INVALID_TYPE_PAYLOAD_LENGTH` and
+`UNSUPPORTED_PAYLOAD_VERSION`, and `OwidError` for every other status,
+with the message naming the status. The three raising `ValueError` are
+the three the payload rules produce, whilst every other status comes
+from the envelope. Signature verification against a key that cannot be
+decoded, a key list that cannot be fetched, and a cloud answer other than
+the one asked for remain exceptions, because they are faults in the
+surroundings and not properties of the identifier.
 
 ### Migrating from the removed OWID API
 
@@ -578,9 +658,12 @@ is refreshed by common-ci's `update-example-assets` step.
 - **No signature verification on parsing.** A parsed 51Did is not known to
   be genuine. Call `verify(public_key_pem)`, `signature_status(public_key_pem)`
   or a `DidClient` check when needed.
+- **No fetching of a terms document.** `fod_id.terms` answers with the
+  address and nothing more. What to do with the document is the receiver's
+  decision.
 - **No upper bound on the size of an identifier.** The lengths beyond the
-  header and match key belong to the cloud. The 4096 character figure in
-  `DidClient` is client policy against obviously malformed text, not a
-  format limit.
+  header, match key and Terms belong to the cloud. The 4096 character
+  figure in `DidClient` is client policy against obviously malformed text,
+  not a format limit.
 - **No creation of new 51Dids.** This is a parser; new 51Dids are issued by the
   51Degrees cloud / on-premise hashing engines.

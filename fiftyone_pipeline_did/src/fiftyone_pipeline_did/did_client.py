@@ -856,9 +856,11 @@ def _date_of(fod_id: FodId) -> datetime:
 def _payload_length_valid(fod_id: FodId) -> bool:
     """Whether the payload is at least the base length for its type, being
     five header bytes plus a 32 byte match key, or 16 for a Random
-    identifier. Anything beyond the base is a creator context section,
-    whose exact lengths belong to the cloud, so any longer payload is
-    accepted here."""
+    identifier. Beyond the base come the Terms byte and then a creator
+    context section, whose exact lengths belong to the cloud, so any
+    longer payload is accepted here. The base does not include the Terms,
+    because a payload ending at the match key carries no byte for it and
+    reads as terms that are not stated."""
     match_key_length = GUID_LENGTH if fod_id.type is IdType.RANDOM \
         else MATCH_KEY_LENGTH
     return len(fod_id.payload) >= HEADER_LENGTH + match_key_length

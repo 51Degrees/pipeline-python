@@ -61,3 +61,11 @@ GUID_LENGTH = 16
 RANDOM_PAYLOAD_LENGTH = HEADER_LENGTH + GUID_LENGTH
 #: Minimum byte length of a Probabilistic or HashedEmail 51Did payload.
 PAYLOAD_LENGTH = MATCH_KEY_OFFSET + MATCH_KEY_LENGTH
+#: Byte length of the Terms field, which follows the match key. There is no
+#: offset constant for it, because the identifier type fixes the match key
+#: length and so the type says where the field starts.
+TERMS_LENGTH = 1
+#: The payload layout version this package reads, carried in bits 4 and 5
+#: of the flags byte. Any other version is refused rather than read under
+#: this layout.
+SUPPORTED_PAYLOAD_VERSION = 0
