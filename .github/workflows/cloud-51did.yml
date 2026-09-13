@@ -44,6 +44,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Copy the OWID source into the package
+        # setup.py declares fiftyone_pipeline_did._owid as a package, and it
+        # is copied out of the owid-python submodule rather than committed,
+        # so without this the wheel build fails with "package directory
+        # 'src/fiftyone_pipeline_did/_owid' does not exist" before any test
+        # runs.
+        shell: pwsh
+        working-directory: .
+        run: ./ci/copy-owid-source.ps1
       - name: Install tox
         run: python -m pip install --upgrade pip tox
       - name: Cloud 51Did test for each resource key secret
