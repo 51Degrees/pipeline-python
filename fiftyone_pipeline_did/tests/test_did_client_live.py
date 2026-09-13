@@ -190,10 +190,14 @@ class DidClientLiveTests(unittest.TestCase):
             if terms is not None:
                 checked += len(identifiers)
 
+        # Reported as a skip rather than printed, because a runner shows
+        # the counts and not the output, so a run that proved nothing would
+        # otherwise look identical to one that proved everything.
         if checked == 0:
-            print("NOTHING PROVEN: this resource key returned no marketing "
-                  "51Did, so no terms address was read. Use a key entitled "
-                  "to the standard or personalized usage.", file=sys.stderr)
+            self.skipTest(
+                "this resource key returned no marketing 51Did, so no terms "
+                "address was read and this run did not prove it; use a key "
+                "entitled to the standard or personalized usage")
 
     def test_consent_string_sets_the_usage_from_consent_bit(self):
         """A consent management platform sends an IAB TCF consent string
@@ -236,10 +240,12 @@ class DidClientLiveTests(unittest.TestCase):
                     self.MODEL_TERMS_FOR_MARKETING_2, True)
             proven += len(identifiers)
 
+        # Same reasoning as the usage test above.
         if proven == 0:
-            print("NOTHING PROVEN: this resource key returned no identifier "
-                  "for either consent string, so the usage-from-consent bit "
-                  "was never read.", file=sys.stderr)
+            self.skipTest(
+                "this resource key returned no identifier for either consent "
+                "string, so the usage-from-consent bit was never read and "
+                "this run did not prove it")
 
 if __name__ == "__main__":
     unittest.main()
