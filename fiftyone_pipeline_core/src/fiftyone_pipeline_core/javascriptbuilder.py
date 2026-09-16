@@ -25,10 +25,10 @@ import json
 from pathlib import Path
 try:
     #python2
-    from urllib import urlencode
+    from urllib import quote_plus
 except ImportError:
     #python3
-    from urllib.parse import urlencode
+    from urllib.parse import quote_plus
 
 import chevron
 from jsmin import jsmin
@@ -48,6 +48,23 @@ from .constants import Constants
 # never match. The same two are excluded by the .NET builder, which is the
 # reference for this behaviour.
 EXCLUDED_PARAMETERS = ["query.session-id", "query.sequence"]
+
+
+def url_encode(value):
+    """!
+    Encode a parameter key or value the way the .NET builder does, with
+    WebUtility.UrlEncode. A space becomes '+', letters, digits and
+    "-_.!*()" are left alone, and everything else is percent encoded. The
+    script joins the parameters into its request body without encoding them
+    again, so an unencoded '&' or '=' would split a value into extra fields.
+
+    @type value: object
+    @param value: The key or value to encode
+    @rtype: string
+    @return: The encoded text
+    """
+
+    return quote_plus(str(value), safe="!*()").replace("~", "%7E")
 
 
 class JavaScriptBuilderEvidenceKeyFilter(EvidenceKeyFilter):
@@ -200,38 +217,40 @@ class JavascriptBuilderElement(FlowElement):
         # cached response would be thrown away and the snippets would run
         # again on every page. A visitor moving through a site would pay a
         # request per page for the life of the tab.
+        # Each key and value is encoded here because the script joins them
+        # into its request body as they are. The key is everything after the
+        # first dot, so a name that itself holds a dot is kept whole.
         variables["_parameters"] = dict([
-            (param.split(".")[1], query_params[param])
+            (url_encode(param.split(".", 1)[1]),
+             url_encode(query_params[param]))
             for param in query_params.keys()
             if param.startswith("query.")
             and param not in EXCLUDED_PARAMETERS
         ])
-        variables["_parameters"] = json.dumps(variables["_parameters"])
+        # Written without spaces, as the .NET builder writes it.
+        variables["_parameters"] = json.dumps(
+            variables["_parameters"], separators=(",", ":"))
 
         if variables["_host"] and variables["_protocol"] and variables["_endpoint"]:
 
-            variables["_url"] = variables["_protocol"] + "://" + variables["_host"] + variables["_endpoint"]
+            # The callback URL is the protocol, the host and the endpoint,
+            # with exactly one slash between the host and the endpoint, as
+            # in the .NET builder. No query values are added to it. They
+            # reach the callback in the request body through the parameters
+            # above, and the script appends the session id and the sequence
+            # itself. Adding every evidence value here, as this builder used
+            # to, sent those two twice and, because the evidence reaching
+            # this element is not narrowed to query values, also wrote the
+            # end user's User-Agent, IP address and host headers into the
+            # served script's URL.
+            host = variables["_host"]
+            endpoint = variables["_endpoint"]
+            if not endpoint.startswith("/") and not host.endswith("/"):
+                endpoint = "/" + endpoint
+            elif endpoint.startswith("/") and host.endswith("/"):
+                endpoint = endpoint[1:]
 
-            # Add query parameters to the URL
-
-            query = {}
- 
-            for param, paramvalue in query_params.items():
-
-                paramkey = param.split(".")[1]
-
-                query[paramkey] = paramvalue
-  
-            url_query = urlencode(query)
-            
-            # Does the URL already have a query string in it?
-    
-            if "?" not in variables["_url"]: 
-                variables["_url"] += "?"
-            else:
-                variables["_url"] += "&"
-            
-            variables["_url"] += url_query
+            variables["_url"] = variables["_protocol"] + "://" + host + endpoint
 
             variables["_updateEnabled"] = True
         else:

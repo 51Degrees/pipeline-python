@@ -25,7 +25,8 @@ from flask import request
 def webevidence(request):
 
     """!
-    Get evidence from a web request (gets headers, cookies and query parameters)
+    Get evidence from a web request (gets headers, cookies, query parameters
+    and the fields of a posted form)
     
     @type request: Request 
     @param request: A Request object
@@ -45,7 +46,19 @@ def webevidence(request):
     for query,value in request.args.items():
 
         webevidence["query." + query] = value
-    
+
+    # Form fields are query evidence too, as in the other languages' web
+    # integrations. The client script posts the results of its snippets, the
+    # session id and the sequence as a form body, so without this none of
+    # them reached the pipeline. They are added after the query string, so
+    # a value the script sent in its body replaces one in the URL. Flask
+    # only fills request.form for a form content type, so any other body is
+    # left alone.
+    if request.method == "POST":
+        for field, value in request.form.items():
+
+            webevidence["query." + field] = value
+
     webevidence["server.client-ip"] =  request.remote_addr
 
     webevidence["server.host-ip"] =  request.host
