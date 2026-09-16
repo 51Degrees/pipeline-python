@@ -126,7 +126,8 @@ class JavascriptBuilderElement(FlowElement):
 
         * @param {dict} options options object
         * @param {string} options.obj_name the name of the client
-        * side object with the JavaScript properties in it ('fod' by default).
+        * side object with the JavaScript properties in it ('fod' when
+        * absent or None).
         * This can be overridden per request with the
         * "query.fod-js-object-name" evidence key. The name must be a
         * JavaScript identifier (ASCII letters, digits, '_' and '$', not
@@ -153,7 +154,11 @@ class JavascriptBuilderElement(FlowElement):
         
         self.settings = {}
 
-        self.settings['_objName'] = settings["obj_name"] if "obj_name" in settings else 'fod'
+        # A name that is not configured at all, absent or None, means the
+        # default. Any configured name, the empty string included, must be
+        # valid.
+        obj_name = settings.get("obj_name")
+        self.settings['_objName'] = 'fod' if obj_name is None else obj_name
         if not is_valid_object_name(self.settings['_objName']):
             raise ValueError(
                 "The JavaScript builder's obj_name setting must be a "

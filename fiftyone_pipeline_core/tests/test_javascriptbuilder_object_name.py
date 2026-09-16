@@ -246,3 +246,14 @@ class JavaScriptBuilderObjectNameSettingTests(unittest.TestCase):
     def test_valid_configured_name_is_accepted(self, _, name):
         element = JavascriptBuilderElement({"obj_name": name})
         self.assertEqual(name, element.settings["_objName"])
+
+    @parameterized.expand([
+        ["absent", {}],
+        ["none", {"obj_name": None}],
+    ])
+    def test_name_not_configured_is_fod(self, _, settings):
+        """A name that is not configured at all, absent or None, means fod.
+        Only a configured name, the empty string included, is checked."""
+
+        element = JavascriptBuilderElement(settings)
+        self.assertEqual("fod", element.settings["_objName"])
