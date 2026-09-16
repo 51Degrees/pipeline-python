@@ -57,8 +57,11 @@ EXCLUDED_PARAMETERS = ["query.session-id", "query.sequence"]
 # pattern that are not reserved words are used.
 OBJECT_NAME_PATTERN = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 
-# Words that cannot be used as a variable name, including those reserved
-# only in strict mode code and the literals null, true and false.
+# Names the object cannot have. These are the reserved words of the language,
+# including those reserved only in strict mode and the literals null, true
+# and false, plus the three global values a top level var cannot replace, so
+# the object would silently never be created, and the name of the constructor
+# the script itself defines.
 RESERVED_WORDS = frozenset([
     "await", "break", "case", "catch", "class", "const", "continue",
     "debugger", "default", "delete", "do", "else", "enum", "export",
@@ -66,7 +69,8 @@ RESERVED_WORDS = frozenset([
     "import", "in", "instanceof", "interface", "let", "new", "null",
     "package", "private", "protected", "public", "return", "static",
     "super", "switch", "this", "throw", "true", "try", "typeof", "var",
-    "void", "while", "with", "yield"])
+    "void", "while", "with", "yield",
+    "Infinity", "NaN", "undefined", "fiftyoneDegreesManager"])
 
 
 def is_valid_object_name(name):
@@ -79,7 +83,7 @@ def is_valid_object_name(name):
     @rtype: bool
     @return: True if the name is a JavaScript identifier made of ASCII
     letters, digits, '_' and '$' that does not start with a digit and is not
-    a reserved word
+    one of RESERVED_WORDS
     """
 
     return (

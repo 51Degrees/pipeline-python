@@ -157,6 +157,12 @@ class JavaScriptBuilderObjectNameTests(unittest.TestCase):
         # A reserved word is also an ordinary word in the script's comments,
         # so only the places the name is written are checked for it.
         ["reserved_word", "class", False],
+        # These are also ordinary words in the script, as values or as the
+        # constructor's own name.
+        ["infinity", "Infinity", False],
+        ["nan", "NaN", False],
+        ["undefined", "undefined", False],
+        ["constructor_name", "fiftyoneDegreesManager", False],
     ])
     def test_invalid_name_from_evidence_is_ignored(
             self, _, name, check_text):
@@ -216,6 +222,12 @@ class JavaScriptBuilderObjectNameSettingTests(unittest.TestCase):
         ["quote", 'x"y'],
         ["empty", ""],
         ["reserved_word", "var"],
+        ["infinity", "Infinity"],
+        ["nan", "NaN"],
+        ["undefined", "undefined"],
+        ["constructor_name", "fiftyoneDegreesManager"],
+        ["trailing_new_line", "fod\n"],
+        ["not_ascii", "caf\u00e9"],
         ["not_a_string", 5],
     ])
     def test_invalid_configured_name_is_refused(self, _, name):
@@ -229,6 +241,7 @@ class JavaScriptBuilderObjectNameSettingTests(unittest.TestCase):
         ["plain", "myFod"],
         ["underscore", "_fod"],
         ["dollar", "$fod9"],
+        ["contains_a_reserved_word", "classy"],
     ])
     def test_valid_configured_name_is_accepted(self, _, name):
         element = JavascriptBuilderElement({"obj_name": name})
