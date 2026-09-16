@@ -106,16 +106,19 @@ class JavaScriptBuilderSequenceTests(unittest.TestCase):
 
     @parameterized.expand([
         ["text", "abc"],
-        ["statement", "1;b"],
+        ["negative", "-1"],
+        ["zero", "0"],
+        ["too_large", "99999999999"],
         ["empty", ""],
+        ["statement", "1;b"],
         ["decimal", "1.5"],
         ["underscore", "1_0"],
-        ["too_large", "2147483648"],
+        ["just_too_large", "2147483648"],
     ])
     def test_unusable_sequence_from_query_becomes_one(self, _, value):
-        """A query.sequence the builder cannot use as a whole number is
-        rendered as 1, which is what the .NET builder does, so the script
-        parses and nothing else is written in its place."""
+        """A query.sequence that is not a positive 32 bit integer is rendered
+        as 1, as the pipeline specification says, so the script parses and
+        nothing else is written in its place."""
 
         script = _render({
             "query.session-id": "abc",
@@ -125,10 +128,35 @@ class JavaScriptBuilderSequenceTests(unittest.TestCase):
         self.assert_parses(script)
 
     @parameterized.expand([
+        ["text", "abc"],
+        ["negative", "-1"],
+        ["zero", "0"],
+        ["too_large", "99999999999"],
+        ["empty", ""],
+        ["largest", "2147483647"],
+    ])
+    def test_unusable_sequence_with_sequence_element_becomes_one(
+            self, _, value):
+        """With the SequenceElement the value that reaches the script is the
+        one the element works out. A query.sequence that is not a positive 32
+        bit integer is treated as no sequence, so the request is sequence 1
+        rather than failing. The largest sequence has no next value, so the
+        builder renders 1 for it as well."""
+
+        script = _render(
+            {"query.session-id": "abc", "query.sequence": value},
+            sequence_element=True)
+
+        self.assertEqual(["var sequence = 1;"], _line(script, "sequence"))
+        self.assertEqual(
+            ['var sessionId = "abc";'], _line(script, "sessionId"))
+        self.assert_parses(script)
+
+    @parameterized.expand([
         ["text", "7", 7],
         ["spaces", " 7 ", 7],
-        ["negative", "-2", -2],
         ["number", 12, 12],
+        ["largest", "2147483647", 2147483647],
     ])
     def test_usable_sequence_from_query_is_rendered(self, _, value, expected):
         script = _render({
@@ -140,11 +168,71 @@ class JavaScriptBuilderSequenceTests(unittest.TestCase):
             _line(script, "sequence"))
         self.assert_parses(script)
 
-    def test_session_id_from_query_is_rendered(self):
-        script = _render({"query.session-id": "abc-123"})
+    @parameterized.expand([
+        ["without_sequence_element", False],
+        ["with_sequence_element", True],
+    ])
+    def test_session_id_from_query_is_rendered(self, _, sequence_element):
+        script = _render(
+            {"query.session-id": "abc-123"},
+            sequence_element=sequence_element)
 
         self.assertEqual(
             ['var sessionId = "abc-123";'], _line(script, "sessionId"))
+        self.assert_parses(script)
+
+    def test_longest_session_id_is_rendered(self):
+        session_id = "a" * 64
+        script = _render({"query.session-id": session_id})
+
+        self.assertEqual(
+            ['var sessionId = "' + session_id + '";'],
+            _line(script, "sessionId"))
+        self.assert_parses(script)
+
+    @parameterized.expand([
+        [name + "_" + ("with" if element else "without")
+         + "_sequence_element", value, check_text, element]
+        for name, value, check_text in [
+            ["quote", 'a"b', True],
+            ["backslash", "a\\b", True],
+            ["end_of_script", "</script>", True],
+            ["too_long", "a" * 65, True],
+            ["not_ascii", "café", True],
+            # The template's own text holds "a b" and "ab", so for these two
+            # only the rendered session id is read.
+            ["space", "a b", False],
+            ["new_line", "ab\n", False],
+        ]
+        for element in [False, True]
+    ])
+    def test_unsafe_session_id_is_rendered_empty(
+            self, _, value, check_text, sequence_element):
+        """The session id is written inside quotes without any escaping, so
+        one that is not 1 to 64 ASCII letters, digits and hyphens is rendered
+        as an empty string, as the pipeline specification says. The
+        SequenceElement keeps a session id it is given, so the check is the
+        builder's in both pipelines."""
+
+        script = _render(
+            {"query.session-id": value},
+            sequence_element=sequence_element)
+
+        self.assertEqual(
+            ['var sessionId = "";'], _line(script, "sessionId"))
+        if check_text:
+            self.assertNotIn(value, script)
+        self.assert_parses(script)
+
+    def test_generated_session_id_is_rendered(self):
+        """The SequenceElement creates a session id on the first request,
+        and that id is safe to render."""
+
+        script = _render(sequence_element=True)
+
+        lines = _line(script, "sessionId")
+        self.assertEqual(1, len(lines))
+        self.assertRegex(lines[0], r'^var sessionId = "[A-Za-z0-9-]{1,64}";$')
         self.assert_parses(script)
 
     def test_sequence_element_still_sets_the_sequence(self):
@@ -165,10 +253,24 @@ class JavaScriptBuilderSequenceTests(unittest.TestCase):
         ["none", None, 1],
         ["true", True, 1],
         ["float", 2.0, 1],
-        ["small", -2 ** 31, -2 ** 31],
-        ["too_small", -2 ** 31 - 1, 1],
-        ["large", 2 ** 31 - 1, 2 ** 31 - 1],
+        ["zero", 0, 1],
+        ["negative", -1, 1],
+        ["smallest", 1, 1],
+        ["largest", 2 ** 31 - 1, 2 ** 31 - 1],
+        ["too_large", 2 ** 31, 1],
         ["plus", "+3", 3],
+        ["negative_text", "-3", 1],
     ])
     def test_get_sequence(self, _, value, expected):
         self.assertEqual(expected, javascriptbuilder.get_sequence(value))
+
+    @parameterized.expand([
+        ["plain", "abc-123", "abc-123"],
+        ["none", None, ""],
+        ["empty", "", ""],
+        ["number", 5, ""],
+        ["too_long", "a" * 65, ""],
+        ["quote", 'a"b', ""],
+    ])
+    def test_get_session_id(self, _, value, expected):
+        self.assertEqual(expected, javascriptbuilder.get_session_id(value))

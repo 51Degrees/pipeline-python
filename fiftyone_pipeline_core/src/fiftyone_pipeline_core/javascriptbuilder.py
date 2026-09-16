@@ -51,11 +51,44 @@ from .constants import Constants
 EXCLUDED_PARAMETERS = ["query.session-id", "query.sequence"]
 
 # The sequence the script is rendered with when the evidence holds no usable
-# value, which is what the .NET builder uses.
+# value.
 DEFAULT_SEQUENCE = 1
 
-# A whole number as text, which is what the .NET builder accepts.
+# The largest sequence, which is the largest 32 bit signed integer.
+MAX_SEQUENCE = 2 ** 31 - 1
+
+# A whole number as text.
 SEQUENCE_PATTERN = re.compile(r"\s*[+-]?[0-9]+\s*")
+
+# A session id the script can be given. The session id is written into the
+# script inside quotes without any escaping, so anything else could end the
+# string early and break the script or change what it does.
+SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9-]{1,64}")
+
+
+def parse_sequence(value):
+
+    """!
+    A sequence as a positive 32 bit integer.
+
+    @type value: object
+    @param value: The query.sequence evidence, or None
+    @rtype: int
+    @return: The sequence, or None when the value is not a whole number from
+    1 to 2147483647
+    """
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        sequence = value
+    elif isinstance(value, str) and SEQUENCE_PATTERN.fullmatch(value):
+        sequence = int(value)
+    else:
+        return None
+    if 1 <= sequence <= MAX_SEQUENCE:
+        return sequence
+    return None
 
 
 def get_sequence(value):
@@ -66,8 +99,9 @@ def get_sequence(value):
     The template writes the sequence as bare code (var sequence = ...;), so
     anything other than a whole number would stop the script parsing, or
     change what it does. A pipeline without a SequenceElement passes the
-    query string's value, or nothing at all, straight through. As the .NET
-    builder does, a value that is not a 32 bit whole number becomes 1.
+    query string's value, or nothing at all, straight through. As the
+    pipeline specification says, a value that is not a positive 32 bit
+    integer becomes 1.
 
     @type value: object
     @param value: The query.sequence evidence, or None
@@ -75,17 +109,29 @@ def get_sequence(value):
     @return: The sequence to render
     """
 
-    if isinstance(value, bool):
-        return DEFAULT_SEQUENCE
-    if isinstance(value, int):
-        sequence = value
-    elif isinstance(value, str) and SEQUENCE_PATTERN.fullmatch(value):
-        sequence = int(value)
-    else:
-        return DEFAULT_SEQUENCE
-    if -2 ** 31 <= sequence < 2 ** 31:
-        return sequence
-    return DEFAULT_SEQUENCE
+    sequence = parse_sequence(value)
+    return DEFAULT_SEQUENCE if sequence is None else sequence
+
+
+def get_session_id(value):
+
+    """!
+    The session id to render into the script.
+
+    The template writes the session id inside quotes without any escaping.
+    As the pipeline specification says, a session id that is not 1 to 64
+    ASCII letters, digits and hyphens is rendered as an empty string, whether
+    it came from the SequenceElement or from the query string.
+
+    @type value: object
+    @param value: The query.session-id evidence, or None
+    @rtype: str
+    @return: The session id to render, or an empty string
+    """
+
+    if isinstance(value, str) and SESSION_ID_PATTERN.fullmatch(value):
+        return value
+    return ""
 
 
 class JavaScriptBuilderEvidenceKeyFilter(EvidenceKeyFilter):
@@ -227,10 +273,11 @@ class JavascriptBuilderElement(FlowElement):
         variables["_enableCookies"]
 
         query_params = self.get_evidence_key_filter().filter_evidence(flowdata.evidence.get_all())
-        # Both are written into the script, so each always has a value. The
-        # session id is written inside quotes and is empty when absent, and
-        # the sequence is written as bare code, so it is always a number.
-        variables["_sessionId"] = query_params["query.session-id"] if "query.session-id" in query_params else ""
+        # Both are written into the script, so each always has a safe value.
+        # The session id is written inside quotes and is empty when absent or
+        # not safe, and the sequence is written as bare code, so it is always
+        # a positive number.
+        variables["_sessionId"] = get_session_id(query_params.get("query.session-id"))
         variables["_sequence"] = get_sequence(query_params.get("query.sequence"))
 
         # The session id and the sequence are left out, because the script
