@@ -39,6 +39,17 @@ from .elementdata_dictionary import ElementDataDictionary
 from .constants import Constants
 
 
+# Evidence keys the rendered script is not configured with. Both are
+# appended to the script's own request by the script itself, so naming them
+# here as well would send each twice and, worse, put the session id into the
+# record the script keeps of a request's inputs. That record decides whether
+# a later page view in the same tab can be served from the cached response,
+# and a session id changes on every page view, so a record holding one could
+# never match. The same two are excluded by the .NET builder, which is the
+# reference for this behaviour.
+EXCLUDED_PARAMETERS = ["query.session-id", "query.sequence"]
+
+
 class JavaScriptBuilderEvidenceKeyFilter(EvidenceKeyFilter):
 
     def filter(self, key):
@@ -181,10 +192,19 @@ class JavascriptBuilderElement(FlowElement):
         variables["_sessionId"] = query_params["query.session-id"] if "query.session-id" in query_params else None
         variables["_sequence"] = query_params["query.sequence"] if "query.sequence" in query_params else None
 
+        # The session id and the sequence are left out, because the script
+        # appends both to its own request after it has taken the record of
+        # that request's inputs. Putting them here as well would place the
+        # session id, which is different on every page view, into that
+        # record, so the record could never match the next page view's, the
+        # cached response would be thrown away and the snippets would run
+        # again on every page. A visitor moving through a site would pay a
+        # request per page for the life of the tab.
         variables["_parameters"] = dict([
             (param.split(".")[1], query_params[param])
             for param in query_params.keys()
             if param.startswith("query.")
+            and param not in EXCLUDED_PARAMETERS
         ])
         variables["_parameters"] = json.dumps(variables["_parameters"])
 

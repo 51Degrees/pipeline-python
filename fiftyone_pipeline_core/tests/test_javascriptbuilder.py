@@ -277,6 +277,53 @@ class JavaScriptBundlerTests(unittest.TestCase):
         self.assertEqual(len(FlowData.jsonbundler.json["javascriptProperties"]), 0)
 
 
+    def testParametersExcludeSessionIdAndSequence(self):
+        """The rendered script is not configured with the session id or the
+        sequence. It appends both to its own request itself, after taking
+        the record of that request's inputs which decides whether a later
+        page view can be served from the cached response. A session id is
+        different on every page view, so one named in the parameters would
+        put a value in that record that can never match, the cache would be
+        thrown away and the snippets would run again on every page."""
+
+        Pipeline = (TestPipeline(False)).Pipeline
+
+        FlowData = Pipeline.create_flowdata()
+
+        FlowData.evidence.add("query.session-id", "test-session")
+        FlowData.evidence.add("query.sequence", 1)
+        FlowData.evidence.add("query.mark", "kept")
+
+        FlowData.process()
+
+        script = FlowData.javascriptbuilder.javascript
+
+        # The session id is legitimately rendered on its own, as _sessionId,
+        # because the script appends it to its request. What must not carry
+        # it is the parameters object the record is built from, so that one
+        # line is what this reads.
+        parameters = [line for line in script.splitlines()
+                      if "var renderedParameters" in line]
+        self.assertEqual(
+            1, len(parameters),
+            "the rendered script should declare renderedParameters once: "
+            + str(parameters))
+
+        self.assertNotIn(
+            "session-id", parameters[0],
+            "the session id must not be in the script's parameters, or the "
+            "record of a request's inputs can never match the next page "
+            "view's and the cached response is thrown away every time")
+        self.assertNotIn(
+            "sequence", parameters[0],
+            "the sequence must not be in the script's parameters, for the "
+            "same reason as the session id")
+        self.assertIn(
+            "kept", parameters[0],
+            "every other query evidence value is still in the parameters, "
+            "or this test would pass with no parameters at all")
+
+
     def test_jsonbundler_when_delayed_execution_false(self):
  
         pipeline = PipelineBuilder()
