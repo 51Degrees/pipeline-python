@@ -473,7 +473,7 @@ class OfflineVerificationTests(unittest.TestCase):
     def test_false_for_a_payload_shorter_than_the_base(self):
         # The reader keeps a header-only Reserved payload, so that is the
         # one short shape that reaches the verifier.
-        payload = bytes([0b1100_0000, 0, 0, 0, 0])
+        payload = bytes([0b1100_0001, 0, 0, 0, 0])
         fod_id = signed_fod_id(self.crypto, payload=payload, date=self.date)
         check = run(self.client.verify_signature_detailed(fod_id))
         self.assertFalse(check.valid)
@@ -607,7 +607,26 @@ REDEEMED_WITH_FACTORS = json.dumps({
     "context": "mismatch",
     "factors": {"transport": "verified", "device": "mismatch",
                 "browserip": "verified", "connectionip": "verified",
-                "asn": None, "browser": "verified"},
+                "asn": None, "platformname": "verified",
+                "platformversion": "mismatch", "browsername": "verified",
+                "browserversion": "misconfigured"},
+    "verifiedAt": "2026-08-07T09:15:32Z",
+    "secondsSinceVerified": 2,
+})
+
+#: The four factors cloud release 4.4.38 reports in place of the single
+#: browser factor, in the order the cloud lists them.
+BROWSER_FACTORS = (
+    "platformname", "platformversion", "browsername", "browserversion")
+
+#: A redemption in the shape the cloud sent before release 4.4.38, with
+#: one browser factor and none of the four that replaced it.
+REDEEMED_WITH_THE_OLD_BROWSER_FACTOR = json.dumps({
+    "signature": "verified",
+    "context": "mismatch",
+    "factors": {"transport": "verified", "device": "verified",
+                "browserip": "verified", "connectionip": "verified",
+                "asn": "verified", "browser": "mismatch"},
     "verifiedAt": "2026-08-07T09:15:32Z",
     "secondsSinceVerified": 2,
 })
@@ -676,12 +695,40 @@ class RedeemTests(unittest.TestCase):
             "browserip": FactorResult.VERIFIED,
             "connectionip": FactorResult.VERIFIED,
             "asn": None,
-            "browser": FactorResult.VERIFIED,
+            "platformname": FactorResult.VERIFIED,
+            "platformversion": FactorResult.MISMATCH,
+            "browsername": FactorResult.VERIFIED,
+            "browserversion": FactorResult.MISCONFIGURED,
         }, result.factors)
         self.assertEqual(datetime(2026, 8, 7, 9, 15, 32,
                                   tzinfo=timezone.utc), result.verified_at)
         self.assertEqual(2, result.seconds_since_verified)
         self.assertEqual(REDEEMED_WITH_FACTORS, result.raw)
+
+    def test_the_four_browser_factors_are_read_in_the_cloud_order(self):
+        result = self.redeem(200, REDEEMED_WITH_FACTORS)
+        self.assertEqual(
+            ("transport", "device", "browserip", "connectionip", "asn")
+            + BROWSER_FACTORS,
+            tuple(result.factors))
+        self.assertNotIn("browser", result.factors)
+        # A version mismatch beside a verified name is an upgrade, and a
+        # factor the service could not determine is never a mismatch.
+        self.assertIs(FactorResult.VERIFIED,
+                      result.factors["platformname"])
+        self.assertIs(FactorResult.MISMATCH,
+                      result.factors["platformversion"])
+        self.assertIs(FactorResult.MISCONFIGURED,
+                      result.factors["browserversion"])
+        self.assertIsNot(FactorResult.MISMATCH,
+                         result.factors["browserversion"])
+
+    def test_the_old_browser_factor_populates_none_of_the_four(self):
+        result = self.redeem(200, REDEEMED_WITH_THE_OLD_BROWSER_FACTOR)
+        for name in BROWSER_FACTORS:
+            with self.subTest(factor=name):
+                self.assertNotIn(name, result.factors)
+                self.assertIsNone(result.factors.get(name))
 
     def test_redeemed_without_factors(self):
         result = self.redeem(200, REDEEMED_WITHOUT_FACTORS)

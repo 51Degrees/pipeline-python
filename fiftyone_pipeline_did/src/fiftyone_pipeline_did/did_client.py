@@ -319,9 +319,14 @@ class RedeemResult:
         factors = parsed.get("factors")
         #: Factor name to :class:`FactorResult` (or ``None`` where nothing
         #: was compared), present only when the cloud sent ``factors``,
-        #: which is the mismatch outcome. The names are ``transport``,
-        #: ``device``, ``browserip``, ``connectionip``, ``asn`` and
-        #: ``browser``.
+        #: which is where there is something to diagnose. The names are
+        #: ``transport``, ``device``, ``browserip``, ``connectionip``,
+        #: ``asn``, ``platformname``, ``platformversion``, ``browsername``
+        #: and ``browserversion``. A version mismatch beside a verified
+        #: name means an upgrade, whilst a mismatched name means a
+        #: different operating system or browser. The names are taken as
+        #: the cloud sent them, so a name this package does not list is
+        #: kept under its own key rather than read as one of these.
         self.factors: Optional[Dict[str, FactorValue]] = (
             {str(name): _factor_of(value) for name, value in factors.items()}
             if isinstance(factors, dict) else None)

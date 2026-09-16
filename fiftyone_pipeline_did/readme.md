@@ -96,8 +96,8 @@ fod_id = FodId.from_base64(base64_from_cloud_service)   # either alphabet
 
 type_ = fod_id.type          # IdType.PROBABILISTIC / RANDOM / HASHED_EMAIL
 usage = fod_id.usage         # Usage.NON_MARKETING / STANDARD / PERSONALIZED
-from_consent = fod_id.usage_from_consent  # True when read from a consent
-                                          # string the caller sent
+indirect = fod_id.usage_is_indirect  # True when worked out from another
+                                     # signal, today a consent string
 license_id = fod_id.license_id
 match_key = fod_id.match_key  # SHA-256 or GUID bytes, see type
 terms = fod_id.terms          # address of the terms document it was
@@ -122,23 +122,27 @@ nothing outside 51Degrees.
 ### The usage an identifier was created for
 
 `fod_id.usage` says what the identifier may be used for, as a `Usage`
-carrying `NON_MARKETING`, `STANDARD` or `PERSONALIZED`, and `NONE` for an
-identifier with no usage bit set, which the cloud never issues. It decides
+carrying `NON_MARKETING`, `STANDARD` or `PERSONALIZED`. Those are the only
+three values. An identifier with no usage bit set did not come from the
+cloud, so reading one is refused with `FodIdParseStatus.NO_USAGE` rather
+than answered with a fourth value. The usage decides
 where the identifier may go, because one created for non-marketing must
 never be passed to a demand source, and one created for standard or
 personalized marketing may be passed only to a recipient that has accepted
 the applicable terms. `usage.id_usage` gives the cloud's own `id.usage`
-wording, being `non-marketing`, `standard` or `personalized`, and `None`
-for `NONE`.
+wording, being `non-marketing`, `standard` or `personalized`.
 
 The three usages are cumulative in the bits that carry them, so every
 marketing identifier also carries the non-marketing bit. `fod_id.usage`
 answers with the highest usage granted, which is why it is the only
 supported way to read the usage and why the package does not hand out the
-byte. `fod_id.usage_from_consent` says whether the usage was worked out
-from an IAB consent string the caller sent rather than stated by the
-caller directly. Both are legitimate ways to arrive at a usage and it says
-nothing about which usage was reached.
+byte. `fod_id.usage_is_indirect` says whether the usage is indirect,
+being worked out by the issuer from a signal the caller sent, rather than
+direct, being stated by the caller. A consent string is the only indirect
+signal today. Both are legitimate ways to arrive at a usage and the answer
+says nothing about which usage was reached. The accessor was called
+`usage_from_consent` before, and that name has been removed rather than
+kept beside the new one.
 
 ### The terms an identifier was created under
 
@@ -209,7 +213,7 @@ not part of this package. `fod_id.flags`, `fod_id.hash`,
 `fod_id.date_minutes`, `FodId.MATCH_KEY_OFFSET` and every other offset and
 length were removed, in this package and in the .NET, Java, Node, PHP and
 Rust ones together, so the surface stays the same in every language. Read
-`type`, `usage`, `usage_from_consent`, `license_id`, `match_key` and `date`
+`type`, `usage`, `usage_is_indirect`, `license_id`, `match_key` and `date`
 instead, which read the same bytes and cannot get the cumulative usage bits
 wrong. The layout is still specified, in
 [identifier-layout.md](https://github.com/51Degrees/specifications/blob/main/did-specification/identifier-layout.md),
@@ -256,7 +260,7 @@ reason.
 ### Status meanings
 
 The `FodIdParseStatus` vocabulary is the OWID one, member for member and
-value for value, plus three members for the payload rules this package
+value for value, plus four members for the payload rules this package
 applies once the envelope has been read. A failure inside the envelope is
 carried through with the OWID status unchanged, so the reason reads the
 same whichever language parsed the bytes.
@@ -277,6 +281,7 @@ same whichever language parsed the bytes.
 | `PAYLOAD_TOO_SHORT` | The envelope was read but the payload is shorter than the 5 byte header, so the type cannot be read |
 | `INVALID_TYPE_PAYLOAD_LENGTH` | The header names a type whose match key needs more bytes than the payload holds |
 | `UNSUPPORTED_PAYLOAD_VERSION` | Bits 4 and 5 of the flags byte name a payload layout version this package does not know, so no field is read |
+| `NO_USAGE` | Bits 0 to 2 of the flags byte are all clear, so the payload names no usage. The cloud never writes one, so the identifier is damaged or forged |
 
 ### Lower bounds and no upper bound
 
@@ -481,15 +486,19 @@ acts on it redeems it on the server, with the licence key, against the
 ```python
 redeemed = await client.redeem(fod_id, result, challenge)
 redeemed.context                  # ContextResult: VERIFIED, MISMATCH,
-                                  #   NO_CONTEXT, NOT_CHECKABLE, EXPIRED,
-                                  #   REPLAYED, UNREADABLE, UNCONFIRMED
+                                  #   NO_CONTEXT, MISCONFIGURED,
+                                  #   INVALID_DATE, EXPIRED, REPLAYED,
+                                  #   UNREADABLE, UNCONFIRMED
 redeemed.signature                # SignatureResult: VERIFIED, INVALID
                                   #   or UNKNOWN
-redeemed.factors                  # only on a mismatch: name to
-                                  #   FactorResult (VERIFIED or MISMATCH)
-                                  #   or None where nothing was compared,
-                                  #   for transport, device, browserip,
-                                  #   connectionip, asn and browser
+redeemed.factors                  # only where there is something to
+                                  #   diagnose, name to FactorResult
+                                  #   (VERIFIED, MISMATCH or
+                                  #   MISCONFIGURED) or None where nothing
+                                  #   was compared, for transport, device,
+                                  #   browserip, connectionip, asn,
+                                  #   platformname, platformversion,
+                                  #   browsername and browserversion
 redeemed.verified_at              # datetime, on the redeemed and expired
                                   #   outcomes
 redeemed.seconds_since_verified
