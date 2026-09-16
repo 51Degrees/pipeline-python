@@ -22,6 +22,7 @@
 
 
 import json
+import re
 from pathlib import Path
 try:
     #python2
@@ -48,6 +49,43 @@ from .constants import Constants
 # never match. The same two are excluded by the .NET builder, which is the
 # reference for this behaviour.
 EXCLUDED_PARAMETERS = ["query.session-id", "query.sequence"]
+
+# The sequence the script is rendered with when the evidence holds no usable
+# value, which is what the .NET builder uses.
+DEFAULT_SEQUENCE = 1
+
+# A whole number as text, which is what the .NET builder accepts.
+SEQUENCE_PATTERN = re.compile(r"\s*[+-]?[0-9]+\s*")
+
+
+def get_sequence(value):
+
+    """!
+    The sequence to render into the script.
+
+    The template writes the sequence as bare code (var sequence = ...;), so
+    anything other than a whole number would stop the script parsing, or
+    change what it does. A pipeline without a SequenceElement passes the
+    query string's value, or nothing at all, straight through. As the .NET
+    builder does, a value that is not a 32 bit whole number becomes 1.
+
+    @type value: object
+    @param value: The query.sequence evidence, or None
+    @rtype: int
+    @return: The sequence to render
+    """
+
+    if isinstance(value, bool):
+        return DEFAULT_SEQUENCE
+    if isinstance(value, int):
+        sequence = value
+    elif isinstance(value, str) and SEQUENCE_PATTERN.fullmatch(value):
+        sequence = int(value)
+    else:
+        return DEFAULT_SEQUENCE
+    if -2 ** 31 <= sequence < 2 ** 31:
+        return sequence
+    return DEFAULT_SEQUENCE
 
 
 class JavaScriptBuilderEvidenceKeyFilter(EvidenceKeyFilter):
@@ -189,8 +227,11 @@ class JavascriptBuilderElement(FlowElement):
         variables["_enableCookies"]
 
         query_params = self.get_evidence_key_filter().filter_evidence(flowdata.evidence.get_all())
-        variables["_sessionId"] = query_params["query.session-id"] if "query.session-id" in query_params else None
-        variables["_sequence"] = query_params["query.sequence"] if "query.sequence" in query_params else None
+        # Both are written into the script, so each always has a value. The
+        # session id is written inside quotes and is empty when absent, and
+        # the sequence is written as bare code, so it is always a number.
+        variables["_sessionId"] = query_params["query.session-id"] if "query.session-id" in query_params else ""
+        variables["_sequence"] = get_sequence(query_params.get("query.sequence"))
 
         # The session id and the sequence are left out, because the script
         # appends both to its own request after it has taken the record of
