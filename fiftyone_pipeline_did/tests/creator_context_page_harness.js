@@ -25,7 +25,9 @@ const pageFile = process.argv[2];
 const given = process.argv[3];
 
 const page = fs.readFileSync(pageFile, 'utf8');
-const match = page.match(/<script>\n([\s\S]*?)\n<\/script>/);
+// A checkout on Windows has carriage returns in it, so the ends of
+// lines are matched either way.
+const match = page.match(/<script>\r?\n([\s\S]*?)\r?\n<\/script>/);
 if (!match) {
     console.log(JSON.stringify({ error: 'no script block in the page' }));
     process.exit(1);

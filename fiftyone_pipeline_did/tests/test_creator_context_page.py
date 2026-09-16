@@ -80,7 +80,9 @@ class CreatorContextPageTests(unittest.TestCase):
         written out on its own and checked."""
 
         page = open(PAGE, encoding="utf-8").read()
-        block = re.search(r"<script>\n(.*?)\n</script>", page, re.S)
+        # A checkout on Windows has carriage returns in it.
+        block = re.search(
+            r"<script>\r?\n(.*?)\r?\n</script>", page, re.S)
         self.assertIsNotNone(block, "the page has a script block")
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "page-script.js")
