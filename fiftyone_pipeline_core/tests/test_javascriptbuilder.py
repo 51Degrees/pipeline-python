@@ -20,6 +20,7 @@
 # such notice(s) shall fulfill the requirements of that article.
 # *********************************************************************
 
+import re
 import unittest
 
 from fiftyone_pipeline_core.flowelement import FlowElement
@@ -301,9 +302,14 @@ class JavaScriptBundlerTests(unittest.TestCase):
         # The session id is legitimately rendered on its own, as _sessionId,
         # because the script appends it to its request. What must not carry
         # it is the parameters object the record is built from, so that one
-        # line is what this reads.
+        # line is what this reads. The template has called that declaration
+        # both "parameters" and "renderedParameters", so it is found by the
+        # line mentioning parameters with a brace on it rather than by name,
+        # or this would pass or fail on the embedded template revision. The
+        # line that merely calls it has no brace.
         parameters = [line for line in script.splitlines()
-                      if "var renderedParameters" in line]
+                      if re.search(r"parameters\s*=", line, re.IGNORECASE)
+                      and "{" in line]
         self.assertEqual(
             1, len(parameters),
             "the rendered script should declare renderedParameters once: "
