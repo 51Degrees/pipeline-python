@@ -114,6 +114,20 @@ class JavaScriptBuilderSequenceTests(unittest.TestCase):
         ["decimal", "1.5"],
         ["underscore", "1_0"],
         ["just_too_large", "2147483648"],
+        ["file_separator", chr(0x1C) + "5"],
+        ["group_separator", chr(0x1D) + "5"],
+        ["record_separator", chr(0x1E) + "5"],
+        ["unit_separator", chr(0x1F) + "5"],
+        ["trailing_file_separator", "5" + chr(0x1C)],
+        ["null", chr(0) + "5"],
+        ["no_break_space", chr(0xA0) + "5"],
+        ["line_separator", chr(0x2028) + "5"],
+        ["arabic_indic_digit", chr(0x665)],
+        ["full_width_digit", chr(0xFF15)],
+        ["five_thousand_digits", "9" * 5000],
+        ["plus_alone", "+"],
+        ["spaces_alone", "   "],
+        ["zeros", "0000"],
     ])
     def test_unusable_sequence_from_query_becomes_one(self, _, value):
         """A query.sequence that is not a positive 32 bit integer is rendered
@@ -134,6 +148,11 @@ class JavaScriptBuilderSequenceTests(unittest.TestCase):
         ["too_large", "99999999999"],
         ["empty", ""],
         ["largest", "2147483647"],
+        ["file_separator", chr(0x1C) + "5"],
+        ["unit_separator", chr(0x1F) + "5"],
+        ["trailing_file_separator", "5" + chr(0x1C)],
+        ["five_thousand_digits", "9" * 5000],
+        ["plus_alone", "+"],
     ])
     def test_unusable_sequence_with_sequence_element_becomes_one(
             self, _, value):
@@ -260,9 +279,67 @@ class JavaScriptBuilderSequenceTests(unittest.TestCase):
         ["too_large", 2 ** 31, 1],
         ["plus", "+3", 3],
         ["negative_text", "-3", 1],
+        ["file_separator", chr(0x1C) + "5", 1],
+        ["group_separator", chr(0x1D) + "5", 1],
+        ["record_separator", chr(0x1E) + "5", 1],
+        ["unit_separator", chr(0x1F) + "5", 1],
+        ["trailing_unit_separator", "5" + chr(0x1F), 1],
+        ["ascii_spaces", "\t\n 5 \r\n", 5],
+        ["no_break_space", chr(0xA0) + "5", 1],
+        ["arabic_indic_digit", chr(0x665), 1],
+        ["five_thousand_digits", "9" * 5000, 1],
+        ["leading_zeros", "007", 7],
+        ["zeros", "0000", 1],
+        ["bytes", b"5", 1],
+        ["list", [], 1],
     ])
     def test_get_sequence(self, _, value, expected):
         self.assertEqual(expected, javascriptbuilder.get_sequence(value))
+
+    def test_any_sequence_value_gives_a_usable_number(self):
+        """A page can put anything at all in query.sequence, so the
+        builder has to answer a whole number from 1 to 2147483647 for
+        every value and never raise. Each character below the space is
+        tried on its own and on both sides of a digit, because some of
+        them read as a space to a regular expression and not to int(),
+        and a very long run of digits cannot be read as a number at
+        all."""
+
+        values = ["", " ", "+", "-", "+-1", "5", "abc", "1.5", "0",
+                  "-1", "9" * 5000, chr(0x665), chr(0xFF15),
+                  chr(0xA0) + "5", chr(0x2000) + "5",
+                  chr(0x2028) + "5", None, True, False, 2.0, 0, -1,
+                  2 ** 31, 2 ** 64, b"5", [], {}, object()]
+        for code in range(0x20):
+            character = chr(code)
+            values += [character, character + "5", "5" + character]
+
+        for value in values:
+            with self.subTest(value=repr(value)):
+                sequence = javascriptbuilder.get_sequence(value)
+                self.assertIsInstance(sequence, int)
+                self.assertNotIsInstance(sequence, bool)
+                self.assertGreaterEqual(sequence, 1)
+                self.assertLessEqual(sequence, 2 ** 31 - 1)
+
+    def test_any_sequence_value_reaches_the_script(self):
+        """The same kinds of value go through both pipelines, so a value
+        the builder cannot read is answered with a script rather than an
+        error. U+001C to U+001F are the ones that used to raise."""
+
+        values = [chr(0x1C) + "5", chr(0x1D) + "5", chr(0x1E) + "5",
+                  chr(0x1F) + "5", "5" + chr(0x1C), chr(0) + "5",
+                  "9" * 5000, "+", "   "]
+        for value in values:
+            for element in [False, True]:
+                with self.subTest(value=repr(value), element=element):
+                    script = _render(
+                        {"query.session-id": "abc",
+                         "query.sequence": value},
+                        sequence_element=element)
+                    self.assertEqual(
+                        ["var sequence = 1;"],
+                        _line(script, "sequence"))
 
     @parameterized.expand([
         ["plain", "abc-123", "abc-123"],

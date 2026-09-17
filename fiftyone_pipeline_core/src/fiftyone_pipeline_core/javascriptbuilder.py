@@ -57,8 +57,16 @@ DEFAULT_SEQUENCE = 1
 # The largest sequence, which is the largest 32 bit signed integer.
 MAX_SEQUENCE = 2 ** 31 - 1
 
-# A whole number as text.
-SEQUENCE_PATTERN = re.compile(r"\s*[+-]?[0-9]+\s*")
+# The most digits the largest sequence can have.
+MAX_SEQUENCE_DIGITS = len(str(MAX_SEQUENCE))
+
+# A whole number as text, with the digits on their own so nothing else
+# has to be read as a number. The six ASCII space characters are named
+# one by one rather than written as "\s", because "\s" also matches
+# characters such as U+001C that int() then refuses, and a page can put
+# any of them in the query string. A leading minus is refused here, so
+# what is handed on is always digits this code can read.
+SEQUENCE_PATTERN = re.compile(r"[ \t\n\r\f\v]*\+?([0-9]+)[ \t\n\r\f\v]*")
 
 # A session id the script can be given. The session id is written into the
 # script inside quotes without any escaping, so anything else could end the
@@ -75,20 +83,31 @@ def parse_sequence(value):
     @param value: The query.sequence evidence, or None
     @rtype: int
     @return: The sequence, or None when the value is not a whole number from
-    1 to 2147483647
+    1 to 2147483647. Any value at all can be passed, including one a page
+    supplied, and none of them raises.
     """
 
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
-        sequence = value
-    elif isinstance(value, str) and SEQUENCE_PATTERN.fullmatch(value):
-        sequence = int(value)
-    else:
+        return value if 1 <= value <= MAX_SEQUENCE else None
+    if not isinstance(value, str):
         return None
-    if 1 <= sequence <= MAX_SEQUENCE:
-        return sequence
-    return None
+    match = SEQUENCE_PATTERN.fullmatch(value)
+    if match is None:
+        return None
+
+    # The range is checked on the digits, because a very long run of
+    # digits cannot be read as a number at all and raises instead of
+    # answering. Every leading zero is dropped first, so no digits left
+    # means zero, which is not a sequence.
+    digits = match.group(1).lstrip("0")
+    if (not digits
+            or len(digits) > MAX_SEQUENCE_DIGITS
+            or (len(digits) == MAX_SEQUENCE_DIGITS
+                and digits > str(MAX_SEQUENCE))):
+        return None
+    return int(digits)
 
 
 def get_sequence(value):
