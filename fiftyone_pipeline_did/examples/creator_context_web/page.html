@@ -313,14 +313,7 @@
             + "on the page, so nothing can be created here"));
           return;
         }
-        object.complete(function (data) {
-          if (!data || !data.fodid) {
-            reject(new Error("the client script completed with no 51Did "
-              + "section, so this resource key is not entitled to one"));
-            return;
-          }
-          resolve(data);
-        });
+        object.complete(function (data) { resolve(data || {}); });
       };
       document.head.appendChild(script);
     });
@@ -366,6 +359,14 @@
       })
     : ready
       .then(function (json) {
+        if (!json.fodid) {
+          // Said here rather than where the script is loaded, because a
+          // page checking an identifier from another browser still wants
+          // the script for its snippet values and does not need one of
+          // its own.
+          throw new Error("the client script completed with no 51Did "
+            + "section, so this resource key is not entitled to one");
+        }
         var families = [
           ["Probabilistic", "Global", "idprobglobal"],
           ["Probabilistic", "Licensed", "idproblic"],
