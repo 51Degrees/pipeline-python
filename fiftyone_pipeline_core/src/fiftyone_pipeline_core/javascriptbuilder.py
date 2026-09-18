@@ -26,10 +26,10 @@ import re
 from pathlib import Path
 try:
     #python2
-    from urllib import urlencode
+    from urllib import quote_plus
 except ImportError:
     #python3
-    from urllib.parse import urlencode
+    from urllib.parse import quote_plus
 
 import chevron
 from jsmin import jsmin
@@ -90,6 +90,126 @@ def is_valid_object_name(name):
         isinstance(name, str)
         and OBJECT_NAME_PATTERN.fullmatch(name) is not None
         and name not in RESERVED_WORDS)
+
+
+# The sequence the script is rendered with when the evidence holds no usable
+# value.
+DEFAULT_SEQUENCE = 1
+
+# The largest sequence, which is the largest 32 bit signed integer.
+MAX_SEQUENCE = 2 ** 31 - 1
+
+# The most digits the largest sequence can have.
+MAX_SEQUENCE_DIGITS = len(str(MAX_SEQUENCE))
+
+# A whole number as text, with the digits on their own so nothing else
+# has to be read as a number. The six ASCII space characters are named
+# one by one rather than written as "\s", because "\s" also matches
+# characters such as U+001C that int() then refuses, and a page can put
+# any of them in the query string. A leading minus is refused here, so
+# what is handed on is always digits this code can read.
+SEQUENCE_PATTERN = re.compile(r"[ \t\n\r\f\v]*\+?([0-9]+)[ \t\n\r\f\v]*")
+
+# A session id the script can be given. The session id is written into the
+# script inside quotes without any escaping, so anything else could end the
+# string early and break the script or change what it does.
+SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9-]{1,64}")
+
+
+def parse_sequence(value):
+
+    """!
+    A sequence as a positive 32 bit integer.
+
+    @type value: object
+    @param value: The query.sequence evidence, or None
+    @rtype: int
+    @return: The sequence, or None when the value is not a whole number from
+    1 to 2147483647. Any value at all can be passed, including one a page
+    supplied, and none of them raises.
+    """
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if 1 <= value <= MAX_SEQUENCE else None
+    if not isinstance(value, str):
+        return None
+    match = SEQUENCE_PATTERN.fullmatch(value)
+    if match is None:
+        return None
+
+    # The range is checked on the digits, because a very long run of
+    # digits cannot be read as a number at all and raises instead of
+    # answering. Every leading zero is dropped first, so no digits left
+    # means zero, which is not a sequence.
+    digits = match.group(1).lstrip("0")
+    if (not digits
+            or len(digits) > MAX_SEQUENCE_DIGITS
+            or (len(digits) == MAX_SEQUENCE_DIGITS
+                and digits > str(MAX_SEQUENCE))):
+        return None
+    return int(digits)
+
+
+def get_sequence(value):
+
+    """!
+    The sequence to render into the script.
+
+    The template writes the sequence as bare code (var sequence = ...;), so
+    anything other than a whole number would stop the script parsing, or
+    change what it does. A pipeline without a SequenceElement passes the
+    query string's value, or nothing at all, straight through. As the
+    pipeline specification says, a value that is not a positive 32 bit
+    integer becomes 1.
+
+    @type value: object
+    @param value: The query.sequence evidence, or None
+    @rtype: int
+    @return: The sequence to render
+    """
+
+    sequence = parse_sequence(value)
+    return DEFAULT_SEQUENCE if sequence is None else sequence
+
+
+def get_session_id(value):
+
+    """!
+    The session id to render into the script.
+
+    The template writes the session id inside quotes without any escaping.
+    As the pipeline specification says, a session id that is not 1 to 64
+    ASCII letters, digits and hyphens is rendered as an empty string, whether
+    it came from the SequenceElement or from the query string.
+
+    @type value: object
+    @param value: The query.session-id evidence, or None
+    @rtype: str
+    @return: The session id to render, or an empty string
+    """
+
+    if isinstance(value, str) and SESSION_ID_PATTERN.fullmatch(value):
+        return value
+    return ""
+
+
+def url_encode(value):
+    """!
+    Encode a parameter key or value the way the .NET builder does, with
+    WebUtility.UrlEncode. A space becomes '+', letters, digits and
+    "-_.!*()" are left alone, and everything else is percent encoded. The
+    script joins the parameters into its request body without encoding them
+    again, so an unencoded '&' or '=' would split a value into extra fields.
+
+    @type value: object
+    @param value: The key or value to encode
+    @rtype: string
+    @return: The encoded text
+    """
+
+    return quote_plus(str(value), safe="!*()").replace("~", "%7E")
 
 
 class JavaScriptBuilderEvidenceKeyFilter(EvidenceKeyFilter):
@@ -264,8 +384,12 @@ class JavascriptBuilderElement(FlowElement):
                     + self.settings["_objName"] + "' is used.")
 
         query_params = self.get_evidence_key_filter().filter_evidence(flowdata.evidence.get_all())
-        variables["_sessionId"] = query_params["query.session-id"] if "query.session-id" in query_params else None
-        variables["_sequence"] = query_params["query.sequence"] if "query.sequence" in query_params else None
+        # Both are written into the script, so each always has a safe value.
+        # The session id is written inside quotes and is empty when absent or
+        # not safe, and the sequence is written as bare code, so it is always
+        # a positive number.
+        variables["_sessionId"] = get_session_id(query_params.get("query.session-id"))
+        variables["_sequence"] = get_sequence(query_params.get("query.sequence"))
 
         # The session id and the sequence are left out, because the script
         # appends both to its own request after it has taken the record of
@@ -275,38 +399,40 @@ class JavascriptBuilderElement(FlowElement):
         # cached response would be thrown away and the snippets would run
         # again on every page. A visitor moving through a site would pay a
         # request per page for the life of the tab.
+        # Each key and value is encoded here because the script joins them
+        # into its request body as they are. The key is everything after the
+        # first dot, so a name that itself holds a dot is kept whole.
         variables["_parameters"] = dict([
-            (param.split(".")[1], query_params[param])
+            (url_encode(param.split(".", 1)[1]),
+             url_encode(query_params[param]))
             for param in query_params.keys()
             if param.startswith("query.")
             and param not in EXCLUDED_PARAMETERS
         ])
-        variables["_parameters"] = json.dumps(variables["_parameters"])
+        # Written without spaces, as the .NET builder writes it.
+        variables["_parameters"] = json.dumps(
+            variables["_parameters"], separators=(",", ":"))
 
         if variables["_host"] and variables["_protocol"] and variables["_endpoint"]:
 
-            variables["_url"] = variables["_protocol"] + "://" + variables["_host"] + variables["_endpoint"]
+            # The callback URL is the protocol, the host and the endpoint,
+            # with exactly one slash between the host and the endpoint, as
+            # in the .NET builder. No query values are added to it. They
+            # reach the callback in the request body through the parameters
+            # above, and the script appends the session id and the sequence
+            # itself. Adding every evidence value here, as this builder used
+            # to, sent those two twice and, because the evidence reaching
+            # this element is not narrowed to query values, also wrote the
+            # end user's User-Agent, IP address and host headers into the
+            # served script's URL.
+            host = variables["_host"]
+            endpoint = variables["_endpoint"]
+            if not endpoint.startswith("/") and not host.endswith("/"):
+                endpoint = "/" + endpoint
+            elif endpoint.startswith("/") and host.endswith("/"):
+                endpoint = endpoint[1:]
 
-            # Add query parameters to the URL
-
-            query = {}
- 
-            for param, paramvalue in query_params.items():
-
-                paramkey = param.split(".")[1]
-
-                query[paramkey] = paramvalue
-  
-            url_query = urlencode(query)
-            
-            # Does the URL already have a query string in it?
-    
-            if "?" not in variables["_url"]: 
-                variables["_url"] += "?"
-            else:
-                variables["_url"] += "&"
-            
-            variables["_url"] += url_query
+            variables["_url"] = variables["_protocol"] + "://" + host + endpoint
 
             variables["_updateEnabled"] = True
         else:

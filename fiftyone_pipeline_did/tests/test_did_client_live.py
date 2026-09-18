@@ -35,6 +35,7 @@ import json
 import os
 import sys
 import unittest
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -246,6 +247,136 @@ class DidClientLiveTests(unittest.TestCase):
                 "this resource key returned no identifier for either consent "
                 "string, so the usage-from-consent bit was never read and "
                 "this run did not prove it")
+
+@unittest.skipUnless(
+    RESOURCE_KEY,
+    "set resource_key (or _51DEGREES_RESOURCE_KEY) to run the live tests")
+class BrowserCreatorContextLiveTests(unittest.TestCase):
+    """The whole browser path against the live service, as a page runs it.
+
+    A page is told to run snippets and send what they collect, and only
+    then does the service create a 51Did, so these tests present
+    themselves as a browser and send those values. The context is then
+    verified from the same browser, which redeems as verified, and from a
+    different one, which redeems as a mismatch naming the factors that
+    moved. The factor names are written out here because they are the
+    service's contract with every one of these packages, and a name the
+    service adds, drops or renames has to be seen here rather than by a
+    customer.
+    """
+
+    # A browser the service will judge as a browser, and a second one
+    # whose device and browser differ from the first.
+    CHROME = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+              " (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+    SAFARI = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+              " AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4"
+              " Safari/605.1.15")
+
+    # What the 51Degrees client script collects and sends. The names are
+    # the service's, and it lists them in the reason it gives when they
+    # are missing.
+    SNIPPETS = {
+        "51D_ScreenPixelsHeight": "1080",
+        "51D_ScreenPixelsWidth": "1920",
+        "51D_PixelRatio": "1",
+        "51D_GetHighEntropyValues": (
+            "eyJicmFuZHMiOlt7ImJyYW5kIjoiQ2hyb21pdW0iLCJ2ZXJzaW9uIjoiMTQwIn1d"
+            "LCJwbGF0Zm9ybSI6IldpbmRvd3MiLCJwbGF0Zm9ybVZlcnNpb24iOiIxNS4wLjAifQ"),
+        "51D_ThirdPartyCookiesEnabled": "true",
+    }
+
+    FACTORS = (
+        "transport", "device", "browserip", "connectionip", "asn",
+        "platformname", "platformversion", "browsername", "browserversion")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = DidClient(RESOURCE_KEY, LICENCE_KEY)
+
+    def get(self, url, user_agent):
+        request = urllib.request.Request(
+            url, headers={"User-Agent": user_agent}, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.status, response.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            return error.code, error.read().decode("utf-8")
+
+    def create(self, usage="standard"):
+        """Creates a 51Did the way a page does, sending the snippet values
+        with the request, and returns it."""
+
+        query = dict(self.SNIPPETS)
+        query["id.usage"] = usage
+        url = "{0}{1}.json?{2}".format(
+            self.client.endpoint, urllib.parse.quote(RESOURCE_KEY, safe=""),
+            urllib.parse.urlencode(query))
+        status, body = self.get(url, self.CHROME)
+        self.assertEqual(200, status, body[:300])
+        fodid = json.loads(body).get("fodid") or {}
+        value = fodid.get("idproblic") or fodid.get("idprobglobal")
+        if not value:
+            self.skipTest(
+                "this resource key returned no identifier for a browser "
+                "shaped request: " + json.dumps(fodid)[:300])
+        return FodId.from_base64(value)
+
+    def verify_context(self, fod_id, user_agent):
+        """Step one of the browser check, the call the page makes, which
+        answers with a sealed result the page cannot read."""
+
+        query = dict(self.SNIPPETS)
+        query["51did"] = fod_id.as_base64()
+        url = "{0}id/verify-context/{1}?{2}".format(
+            self.client.endpoint, urllib.parse.quote(RESOURCE_KEY, safe=""),
+            urllib.parse.urlencode(query))
+        status, body = self.get(url, user_agent)
+        if status == 404:
+            self.skipTest("the host does not offer the creator context")
+        self.assertEqual(200, status, body[:300])
+        answer = json.loads(body)
+        if "result" not in answer:
+            self.skipTest(
+                "this host holds no context secret, so it answered in the "
+                "open with " + body[:200])
+        return answer["result"]
+
+    def test_a_page_creates_reads_back_verifies_and_redeems(self):
+        fod_id = self.create()
+        self.assertEqual(Usage.STANDARD, fod_id.usage)
+        self.assertEqual(IdType.PROBABILISTIC, fod_id.type)
+        self.assertTrue(run(self.client.verify_signature(fod_id)))
+        self.assertTrue(run(self.client.verify(fod_id)))
+        result = self.verify_context(fod_id, self.CHROME)
+        redeemed = run(self.client.redeem(fod_id, result))
+        if not self.client.has_licence_key:
+            # Without a licence key the sealed result cannot be opened,
+            # which the service reports as unreadable.
+            self.assertEqual(ContextResult.UNREADABLE, redeemed.context)
+            self.skipTest("set license_key to redeem a sealed result")
+        self.assertEqual(ContextResult.VERIFIED, redeemed.context)
+        self.assertEqual("verified", redeemed.signature.value)
+
+    def test_another_browser_redeems_as_a_mismatch_naming_every_factor(self):
+        if not LICENCE_KEY:
+            self.skipTest("set license_key to redeem a sealed result")
+        fod_id = self.create()
+        result = self.verify_context(fod_id, self.SAFARI)
+        redeemed = run(self.client.redeem(fod_id, result))
+        self.assertEqual(ContextResult.MISMATCH, redeemed.context)
+        self.assertEqual("verified", redeemed.signature.value,
+                         "the identifier is genuine whichever browser "
+                         "presents it")
+        self.assertIsNotNone(redeemed.factors,
+                             "a mismatch says which factors moved")
+        self.assertEqual(sorted(self.FACTORS), sorted(redeemed.factors),
+                         "the service reported a different set of factors "
+                         "from the one this package documents")
+        for name in ("browsername", "browserversion"):
+            self.assertEqual("mismatch", redeemed.factors[name].value,
+                             name + " must differ between the two browsers")
+
 
 if __name__ == "__main__":
     unittest.main()

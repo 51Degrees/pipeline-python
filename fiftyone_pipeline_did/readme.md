@@ -528,14 +528,21 @@ production does. The creator context only makes sense from a browser,
 because a server verifying its own connection would be checking itself
 against itself, so there is no console example.
 
-1. **Create** a 51Did by calling the `json` endpoint, which issues an
-   identifier for the calling connection. The browser makes this call.
+1. **Create** a 51Did by loading the 51Degrees client script, which runs
+   the snippets the service asks for, sends what they collected, and
+   hands the page the answer with the identifier in it. The browser does
+   all of that, so the identifier is created for the browser's own
+   connection. The service issues an identifier only once those values
+   are in, so a page asking for one by itself is told the page has not
+   finished and is given nothing.
 2. **Verify** it with `verify-full`, which returns both the signature
    outcome and the creator context verdict only as an encrypted
    `result` that the caller cannot read or forge. (A deployment holding
    no context secret answers in the open instead.) The browser makes
    this call too, so the cloud observes the browser's live connection,
-   then the page hands the encrypted result to its own server.
+   and it sends the snippet values with it so that this browser can be
+   compared with the creator. The page then hands the encrypted result
+   to its own server.
 3. **Redeem** the encrypted result with `redeem`, presenting the 51Did,
    the encrypted result and the account's licence key, and receive the
    true creator context verdict, when the verification happened

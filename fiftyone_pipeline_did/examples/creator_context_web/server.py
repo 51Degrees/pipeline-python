@@ -27,15 +27,21 @@ encrypted result server side with the ``DidClient`` from this package,
 adding the licence key the browser never sees. The page runs the 51Did
 flow the way production does.
 
-1. Create a 51Did by calling the ``json`` endpoint, which issues an
-   identifier for the calling connection. The browser makes this call,
-   so the identifier is created for the browser's own connection.
+1. Create a 51Did by loading the 51Degrees client script, which runs
+   the snippets the service asks for, sends what they collected, and
+   hands the page the answer with the identifier in it. The browser
+   does all of that, so the identifier is created for the browser's own
+   connection. The service issues an identifier only once those values
+   are in, so a page asking for one by itself is told the page has not
+   finished and is given nothing.
 2. Verify it with ``verify-full``, which returns both the signature
    outcome and the creator context verdict only as an encrypted
    ``result`` that the caller cannot read or forge. (A deployment
    holding no context secret answers in the open instead.) The browser
    makes this call too, so the cloud observes the browser's live connection,
-   then the page hands the encrypted result to this server.
+   and sends the snippet values with it so that this browser can be
+   compared with the creator, then the page hands the encrypted result
+   to this server.
 3. Parse the 51Did, check its signature offline against the published
    public keys, then redeem the encrypted result with ``redeem``,
    presenting the 51Did, the encrypted result and the account's licence

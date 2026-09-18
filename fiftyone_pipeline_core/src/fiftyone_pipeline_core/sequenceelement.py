@@ -23,6 +23,7 @@
 
 from .flowelement import FlowElement
 from .evidence_keyfilter import EvidenceKeyFilter
+from .javascriptbuilder import parse_sequence
 import uuid
 
 class SequenceElementEvidenceKeyFilter(EvidenceKeyFilter):
@@ -74,17 +75,16 @@ class SequenceElement(FlowElement):
     
         if flowdata.evidence.get("query.session-id"):
             
-            # Get current sequence number
-    
-            sequence = flowdata.evidence.get("query.sequence")
-      
-            if sequence:
-                sequence = int(sequence)
-            else:
-                sequence = 1
-           
-      
-            flowdata.evidence.add("query.sequence", sequence + 1)
+            # Get current sequence number. A value that is absent or is not
+            # a positive 32 bit integer is treated as no sequence at all, so
+            # the request is sequence 1 rather than failing. The JavaScript
+            # builder renders any value it cannot use as 1 in the same way.
+
+            sequence = parse_sequence(flowdata.evidence.get("query.sequence"))
+
+            flowdata.evidence.add(
+                "query.sequence",
+                1 if sequence is None else sequence + 1)
 
         else:
             flowdata.evidence.add(
