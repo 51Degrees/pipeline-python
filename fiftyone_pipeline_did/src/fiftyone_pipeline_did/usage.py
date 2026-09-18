@@ -21,7 +21,6 @@
 # *********************************************************************
 
 from enum import IntEnum
-from typing import Optional
 
 
 class Usage(IntEnum):
@@ -45,12 +44,15 @@ class Usage(IntEnum):
 
     The names match the cloud's ``id.usage`` values, ``non-marketing``,
     ``standard`` and ``personalized``, and are the same in every 51Did
-    package."""
+    package.
 
-    #: No usage bit is set. The cloud never issues such an identifier, so
-    #: this is an identifier from somewhere else or a damaged one, and it
-    #: should be treated as though it may not be passed on.
-    NONE = 0
+    There are exactly three usages. A payload with none of the three bits
+    set did not come from the cloud, which writes no flags byte without the
+    first of them, so it is damaged or forged. Reading one is refused with
+    :attr:`~fiftyone_pipeline_did.FodIdParseStatus.NO_USAGE` rather than
+    offered as a fourth value, because the only safe answer to such an
+    identifier is not to pass it on, which the refusal already gives."""
+
     #: Created for use that is not marketing. Must not be passed to a
     #: demand source.
     NON_MARKETING = 1
@@ -64,24 +66,29 @@ class Usage(IntEnum):
     @classmethod
     def from_flags(cls, flags: int) -> "Usage":
         """Decode the usage from bits 0-2 of a flags byte, as the highest
-        usage granted."""
+        usage granted.
+
+        Raises :class:`ValueError` when none of the three bits is set,
+        because that is not a usage. The reader refuses such a payload
+        before this is reached, so the error is only seen by a caller
+        passing a flags byte of their own."""
         if flags & 0b100:
             return cls.PERSONALIZED
         if flags & 0b010:
             return cls.STANDARD
         if flags & 0b001:
             return cls.NON_MARKETING
-        return cls.NONE
+        raise ValueError(
+            "usage bits 000 are not a usage, so a flags byte of "
+            "0x{0:02X} names none".format(flags & 0xFF))
 
     @property
-    def id_usage(self) -> Optional[str]:
-        """The cloud's ``id.usage`` value for this usage, or ``None`` for
-        :attr:`NONE`."""
+    def id_usage(self) -> str:
+        """The cloud's ``id.usage`` value for this usage."""
         return _ID_USAGE[self]
 
 
 _ID_USAGE = {
-    Usage.NONE: None,
     Usage.NON_MARKETING: "non-marketing",
     Usage.STANDARD: "standard",
     Usage.PERSONALIZED: "personalized",

@@ -61,11 +61,11 @@ class FodIdParseStatus(Enum):
     """Why reading a 51Did succeeded or failed.
 
     The vocabulary is the OWID one, member for member and value for value,
-    with three members added for the checks this package makes on the
+    with four members added for the checks this package makes on the
     payload once the envelope has been read. A failure in the envelope keeps
     the OWID status unchanged, so a caller sees the same reason whichever
     language read the bytes, and a failure in the payload names which of the
-    three 51Did rules was broken.
+    four 51Did rules was broken.
 
     Every member other than :attr:`PARSED` is an expected outcome for data
     that arrived from outside, not a fault in the program. A parse that
@@ -122,6 +122,12 @@ class FodIdParseStatus(Enum):
     #: layout this package knows would answer with values that are wrong
     #: rather than absent.
     UNSUPPORTED_PAYLOAD_VERSION = "UnsupportedPayloadVersion"
+    #: Bits 0 to 2 of the flags byte are all clear, so the payload names no
+    #: usage. The cloud writes no flags byte without the non-marketing bit,
+    #: so such a payload is damaged or forged, and it is refused rather than
+    #: offered as a fourth :class:`~fiftyone_pipeline_did.Usage`, because
+    #: the only safe answer to it is not to pass the identifier on.
+    NO_USAGE = "NoUsage"
 
     @classmethod
     def of(cls, status: ParseStatus) -> "FodIdParseStatus":
@@ -174,7 +180,7 @@ class FodId:
     differ. *Compare match keys, never envelopes.*
 
     Payload layout. Every field has a typed accessor here, being
-    :attr:`type`, :attr:`usage`, :attr:`usage_from_consent`,
+    :attr:`type`, :attr:`usage`, :attr:`usage_is_indirect`,
     :attr:`license_id`, :attr:`match_key` and :attr:`terms`, and those
     accessors are the supported way to read an identifier. The bytes and
     offsets behind them are specified at
@@ -201,6 +207,10 @@ class FodId:
     values that are wrong rather than absent. The version is not exposed,
     because a caller has nothing to decide with it.
 
+    A version 0 payload whose usage bits 0 to 2 are all clear names no usage
+    and is refused with :attr:`FodIdParseStatus.NO_USAGE`, because the cloud
+    never writes one, so it is damaged or forged.
+
     Reading and verifying are separate steps. :meth:`try_from_base64` and
     :meth:`try_from_byte_array` read external data without raising and
     answer with a :class:`FodIdParseResult` naming the reason either way,
@@ -225,7 +235,8 @@ class FodId:
         :class:`~fiftyone_pipeline_did.OwidError` if the envelope cannot be
         written out and read back, and :class:`ValueError` if the payload is
         shorter than the header or than the minimum for its identifier
-        type.
+        type, names a payload version this package does not read, or names
+        no usage.
         """
         if owid is None:
             raise TypeError("owid must not be None")
@@ -256,7 +267,7 @@ class FodId:
     @classmethod
     def _from_read(cls, read: ParseResult) -> FodIdParseResult:
         """The non-raising reader over an OWID read. Carries an OWID failure
-        through unchanged, then applies the three 51Did payload rules, and
+        through unchanged, then applies the four 51Did payload rules, and
         builds the identifier only when all of them have passed."""
         if not read.ok:
             return _failed(FodIdParseStatus.of(read.status))
@@ -323,7 +334,9 @@ class FodId:
         an exception. Raises :class:`TypeError` if ``base64`` is ``None`` or
         not a string, :class:`ValueError` if the envelope was read but its
         payload is shorter than the header or than the minimum for its
-        identifier type, and :class:`~fiftyone_pipeline_did.OwidError` for
+        identifier type, names a payload version this package does not
+        read, or names no usage, and
+        :class:`~fiftyone_pipeline_did.OwidError` for
         every other failure, with the message naming the
         :class:`FodIdParseStatus`.
         """
@@ -365,7 +378,8 @@ class FodId:
         prefer an exception. Raises :class:`TypeError` if ``buffer`` is
         ``None`` or not a bytes-like object, :class:`ValueError` if the
         envelope was read but its payload is shorter than the header or than
-        the minimum for its identifier type, and
+        the minimum for its identifier type, names a payload version this
+        package does not read, or names no usage, and
         :class:`~fiftyone_pipeline_did.OwidError` for every other failure,
         with the message naming the :class:`FodIdParseStatus`.
         """
@@ -401,11 +415,17 @@ class FodId:
         return Usage.from_flags(self._flags)
 
     @property
-    def usage_from_consent(self) -> bool:
-        """Whether the usage was derived from an IAB consent string the
-        caller sent, rather than stated by the caller directly. Both are
-        legitimate ways to arrive at a usage, and this says nothing about
-        which usage it is."""
+    def usage_is_indirect(self) -> bool:
+        """Whether the usage is indirect, being worked out by the issuer
+        from a signal the caller sent rather than stated by the caller
+        directly.
+
+        ``False`` means the caller stated the usage. ``True`` means the
+        issuer arrived at it from another signal, and today the only such
+        signal is a consent string, so today this is ``True`` only when the
+        usage was derived from one. A later signal of another kind would
+        set it too. Both are legitimate ways to arrive at a usage, and this
+        says nothing about which usage it is."""
         return (self._flags & 0b1000) != 0
 
     @property
@@ -548,13 +568,14 @@ def _date_minutes(fod_id: "FodId") -> int:
 
 def _read_payload(
         payload: bytes) -> Tuple[FodIdParseStatus, int, int, bytes, int]:
-    """Applies the three 51Did payload rules and unpacks the four fields.
+    """Applies the four 51Did payload rules and unpacks the four fields.
 
     The header must be present before the type can be read, the version it
-    carries must be one this package reads, and the type then says how many
-    match key bytes must follow. The Terms byte follows
-    the match key, and anything beyond it is a creator context section
-    whose lengths belong to the cloud, so a longer payload passes. A
+    carries must be one this package reads, the usage bits must name a
+    usage, and the type then says how many match key bytes must follow.
+    The Terms byte follows the match key, and anything beyond it is a
+    creator context section whose lengths belong to the cloud, so a longer
+    payload passes. A
     Reserved type has no known match key length and keeps the documented
     best-effort reading, being the header fields and whatever bytes follow.
 
@@ -573,6 +594,11 @@ def _read_payload(
     if _payload_version(flags) != SUPPORTED_PAYLOAD_VERSION:
         return (
             FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION, 0, 0, b"", 0)
+    # Checked after the version, because a later version may have moved
+    # the usage bits, so they can only be judged under the layout this
+    # package knows.
+    if flags & _USAGE_MASK == 0:
+        return FodIdParseStatus.NO_USAGE, 0, 0, b"", 0
     match_key_length = _match_key_length(IdType.from_flags(flags), payload)
     if len(payload) < HEADER_LENGTH + match_key_length:
         return FodIdParseStatus.INVALID_TYPE_PAYLOAD_LENGTH, 0, 0, b"", 0
@@ -622,6 +648,10 @@ def _unpack_or_raise(payload: bytes) -> Tuple[int, int, bytes, int]:
     return flags, license_id, match_key, terms_index
 
 
+#: Bits 0 to 2 of the flags byte, which carry the usage.
+_USAGE_MASK = 0b111
+
+
 def _payload_version(flags: int) -> int:
     """Bits 4 and 5 of the flags byte, being the version of the payload
     layout the identifier follows. The envelope carries a version of its
@@ -650,6 +680,11 @@ def _payload_message(status: FodIdParseStatus, payload: bytes) -> str:
         return (
             "51Did payload version {0} is not one this package can "
             "read.".format(_payload_version(payload[FLAGS_OFFSET])))
+    if status is FodIdParseStatus.NO_USAGE:
+        return (
+            "51Did payload names no usage, because usage bits 0 to 2 of "
+            "the flags byte 0x{0:02X} are 000.".format(
+                payload[FLAGS_OFFSET]))
     id_type = IdType.from_flags(payload[FLAGS_OFFSET])
     return ("51Did payload for the {0} type must be at least {1} bytes; "
             "got {2}.".format(

@@ -260,14 +260,15 @@ class FodIdTests(unittest.TestCase):
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(0x80000000, fod.license_id)
 
-    def test_flags_byte_of_zero_is_read(self):
+    def test_lowest_flags_byte_with_a_usage_is_read(self):
         # The byte itself is private now, so these two read it where it is
         # kept and pin that every bit of it survives the parse for the
-        # typed accessors to read.
+        # typed accessors to read. A byte of zero names no usage and is
+        # refused, which NoUsageTests covers.
         payload = canonical_payload()
-        payload[FLAGS_OFFSET] = 0x00
+        payload[FLAGS_OFFSET] = 0x01
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
-        self.assertEqual(0, fod._flags)
+        self.assertEqual(1, fod._flags)
 
     def test_every_flags_bit_outside_the_version_is_read(self):
         # Bits 4 and 5 are the payload version and only version 0 is read,
@@ -373,7 +374,6 @@ class FodIdTests(unittest.TestCase):
         for every marketing identifier, which is the wrong answer for a
         data protection decision."""
         cases = [
-            (0b000, Usage.NONE, None),
             (0b001, Usage.NON_MARKETING, "non-marketing"),
             (0b011, Usage.STANDARD, "standard"),
             (0b111, Usage.PERSONALIZED, "personalized"),
@@ -385,14 +385,26 @@ class FodIdTests(unittest.TestCase):
             self.assertEqual(expected, fod.usage, "usage bits %s" % bin(bits))
             self.assertEqual(id_usage, fod.usage.id_usage)
             self.assertEqual(IdType.RANDOM, fod.type)
-            self.assertFalse(fod.usage_from_consent)
+            self.assertFalse(fod.usage_is_indirect)
 
-    def test_usage_from_consent_is_bit_three(self):
-        payload = canonical_random_payload()
-        payload[FLAGS_OFFSET] = (1 << 6) | 0b1011
-        fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
-        self.assertTrue(fod.usage_from_consent)
-        self.assertEqual(Usage.STANDARD, fod.usage)
+    def test_usage_is_indirect_is_bit_three(self):
+        for flags, indirect in ((0b1011, True), (0b0011, False)):
+            with self.subTest(flags=bin(flags)):
+                payload = canonical_random_payload()
+                payload[FLAGS_OFFSET] = (1 << 6) | flags
+                fod = FodId.from_base64(
+                    self.factory.signed_owid_base64(payload))
+                self.assertIs(indirect, fod.usage_is_indirect)
+                self.assertEqual(Usage.STANDARD, fod.usage)
+
+    def test_the_old_consent_name_is_gone(self):
+        # Renamed with no alias, so a caller still using the old name
+        # finds out at once rather than reading a field whose meaning has
+        # been widened.
+        fod = FodId.from_base64(
+            self.factory.signed_owid_base64(canonical_payload()))
+        self.assertFalse(hasattr(fod, "usage_from_consent"))
+        self.assertFalse(hasattr(FodId, "usage_from_consent"))
 
     def test_type_random_when_bits_01(self):
         fod = FodId.from_base64(
@@ -430,7 +442,7 @@ class FodIdTests(unittest.TestCase):
 
     def test_reserved_header_only_parses(self):
         payload = bytearray(MATCH_KEY_OFFSET)
-        payload[FLAGS_OFFSET] = 0b1100_0000
+        payload[FLAGS_OFFSET] = 0b1100_0001
         fod = FodId.from_base64(self.factory.signed_owid_base64(payload))
         self.assertEqual(IdType.RESERVED, fod.type)
         self.assertEqual(0, len(fod.match_key))
@@ -546,9 +558,9 @@ class FodIdTryParseTests(unittest.TestCase):
 
     # ----- Vocabulary -----
 
-    def test_status_vocabulary_is_the_owid_one_plus_three(self):
+    def test_status_vocabulary_is_the_owid_one_plus_four(self):
         # Every OWID status has a member of the same name and value, so an
-        # OWID failure is carried through unchanged, and the three 51Did
+        # OWID failure is carried through unchanged, and the four 51Did
         # payload statuses are the only additions.
         for status in ParseStatus:
             member = FodIdParseStatus.of(status)
@@ -561,6 +573,7 @@ class FodIdTryParseTests(unittest.TestCase):
                 "PAYLOAD_TOO_SHORT",
                 "INVALID_TYPE_PAYLOAD_LENGTH",
                 "UNSUPPORTED_PAYLOAD_VERSION",
+                "NO_USAGE",
             },
             extra)
 
@@ -623,7 +636,7 @@ class FodIdTryParseTests(unittest.TestCase):
 
     def test_reserved_header_only_parses_best_effort(self):
         payload = bytearray(HEADER_LENGTH)
-        payload[FLAGS_OFFSET] = 0b1100_0000
+        payload[FLAGS_OFFSET] = 0b1100_0001
         fod = self.assert_parsed(FodId.try_from_base64(
             self.factory.signed_owid_base64(payload)))
         self.assertEqual(IdType.RESERVED, fod.type)
@@ -1005,8 +1018,8 @@ class FodIdTermsTests(unittest.TestCase):
                                        MODEL_TERMS_INDEX))
         self.assertEqual(without.type, stated.type)
         self.assertEqual(without.usage, stated.usage)
-        self.assertEqual(without.usage_from_consent,
-                         stated.usage_from_consent)
+        self.assertEqual(without.usage_is_indirect,
+                         stated.usage_is_indirect)
         self.assertEqual(without.license_id, stated.license_id)
         self.assertEqual(without.match_key, stated.match_key)
 
@@ -1087,7 +1100,15 @@ class FodIdVersionTests(unittest.TestCase):
                 payload = payload_ending_at_match_key()
                 payload[FLAGS_OFFSET] = flags
                 with self.subTest(flags=flags):
-                    self.assertTrue(self._read(payload).ok)
+                    # Version 0 with no usage bit is refused for its
+                    # usage, and every later version is refused for its
+                    # version first, since the usage bits may have moved.
+                    version_zero = self._read(payload)
+                    if usage == 0b000:
+                        self.assertIs(FodIdParseStatus.NO_USAGE,
+                                      version_zero.status)
+                    else:
+                        self.assertTrue(version_zero.ok)
                     for version in (1, 2, 3):
                         refused = self._read(
                             with_payload_version(payload, version))
@@ -1095,6 +1116,89 @@ class FodIdVersionTests(unittest.TestCase):
                             FodIdParseStatus.UNSUPPORTED_PAYLOAD_VERSION,
                             refused.status)
                         self.assertIsNone(refused.value)
+
+
+class NoUsageTests(unittest.TestCase):
+    """Bits 0 to 2 of the flags byte all clear. The Usage has exactly three
+    values, so such a payload is refused at parse the way a payload of an
+    unknown version is, and the refusal names what it found.
+    """
+
+    def setUp(self):
+        self.factory = FodIdTestFactory()
+
+    def _payload(self, flags):
+        payload = canonical_payload()
+        payload[FLAGS_OFFSET] = flags
+        return payload
+
+    def test_usage_has_exactly_three_values(self):
+        self.assertEqual(
+            ["NON_MARKETING", "STANDARD", "PERSONALIZED"],
+            [member.name for member in Usage])
+        self.assertFalse(hasattr(Usage, "NONE"))
+
+    def test_usage_bits_000_are_refused_by_the_non_raising_readers(self):
+        # Every type, with bit 3 clear and set, because neither the type
+        # nor the indirect bit is a usage.
+        for id_type in (0b00, 0b01, 0b10, 0b11):
+            for indirect in (0, 0b1000):
+                flags = (id_type << 6) | indirect
+                payload = self._payload(flags)
+                with self.subTest(flags=bin(flags)):
+                    for result in (
+                            FodId.try_from_base64(
+                                self.factory.signed_owid_base64(payload)),
+                            FodId.try_from_byte_array(
+                                self.factory.signed_bytes(payload))):
+                        self.assertFalse(result.ok)
+                        self.assertIs(FodIdParseStatus.NO_USAGE,
+                                      result.status)
+                        self.assertEqual("NoUsage", result.status.value)
+                        self.assertIsNone(result.value)
+
+    def test_usage_bits_000_are_refused_by_the_raising_readers(self):
+        payload = self._payload(0b1000_1000)
+        raw = self.factory.signed_bytes(payload)
+        owid = self.factory.signed_owid(payload)
+        readers = (
+            lambda: FodId.from_base64(
+                self.factory.signed_owid_base64(payload)),
+            lambda: FodId.from_byte_array(raw),
+            lambda: FodId.from_owid(owid),
+            lambda: FodId(owid),
+        )
+        for read in readers:
+            with self.assertRaises(ValueError) as caught:
+                read()
+            message = str(caught.exception)
+            self.assertIn("no usage", message)
+            self.assertIn("000", message)
+            self.assertIn("0x88", message)
+
+    def test_usage_from_flags_refuses_000(self):
+        for flags in (0x00, 0x08, 0xC8):
+            with self.subTest(flags=hex(flags)):
+                with self.assertRaises(ValueError) as caught:
+                    Usage.from_flags(flags)
+                self.assertIn("000", str(caught.exception))
+
+    def test_the_other_patterns_keep_their_reading(self):
+        # Only 000 is refused. The patterns the cloud does not write but
+        # that carry at least one usage bit read as the highest bit set,
+        # as they always have.
+        cases = [
+            (0b010, Usage.STANDARD),
+            (0b100, Usage.PERSONALIZED),
+            (0b101, Usage.PERSONALIZED),
+            (0b110, Usage.PERSONALIZED),
+        ]
+        for bits, expected in cases:
+            with self.subTest(bits=bin(bits)):
+                result = FodId.try_from_base64(
+                    self.factory.signed_owid_base64(self._payload(bits)))
+                self.assertTrue(result.ok)
+                self.assertIs(expected, result.value.usage)
 
 
 class TermsTests(unittest.TestCase):

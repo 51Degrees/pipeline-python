@@ -87,7 +87,7 @@ def run():
     print("  Type      :", fod_id.type.name)
     print("  Usage     :", fod_id.usage.name)
     print("  Id usage  :", fod_id.usage.id_usage)
-    print("  Consent   :", fod_id.usage_from_consent)
+    print("  Indirect  :", fod_id.usage_is_indirect)
     print("  LicenseId :", fod_id.license_id)
     print("  Match key :", fod_id.match_key.hex())
     # The address is answered and never fetched. What to do with the

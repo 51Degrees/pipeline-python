@@ -143,7 +143,7 @@ class DidClientLiveTests(unittest.TestCase):
             if fodid.get(field)
         ]
 
-    def assert_aligned(self, label, fod_id, usage, terms, from_consent):
+    def assert_aligned(self, label, fod_id, usage, terms, indirect):
         """Asserts the terms and every field the flags byte carries, read
         through the accessors rather than by masking. The usage values are
         cumulative, being 001, 011 and 111, so a caller masking the byte
@@ -151,8 +151,8 @@ class DidClientLiveTests(unittest.TestCase):
         non-marketing."""
         self.assertEqual(usage, fod_id.usage, label + ": usage")
         self.assertEqual(
-            from_consent, fod_id.usage_from_consent,
-            label + ": whether the usage came from a consent string")
+            indirect, fod_id.usage_is_indirect,
+            label + ": whether the usage is indirect")
         self.assertEqual(terms, fod_id.terms, label + ": terms")
         self.assertEqual(
             IdType.PROBABILISTIC, fod_id.type,
@@ -200,11 +200,12 @@ class DidClientLiveTests(unittest.TestCase):
                 "address was read and this run did not prove it; use a key "
                 "entitled to the standard or personalized usage")
 
-    def test_consent_string_sets_the_usage_from_consent_bit(self):
+    def test_consent_string_sets_the_usage_is_indirect_bit(self):
         """A consent management platform sends an IAB TCF consent string
         and no usage of its own. The service decodes the string, decides
         the usage from the purposes it grants, and records in the
-        identifier that it did so, which is bit 3 of the flags byte.
+        identifier that the usage is indirect, which is bit 3 of the flags
+        byte. A consent string is the only indirect signal today.
 
         This is the half a caller cannot state for itself. An identifier
         whose usage was stated in the request and one whose usage was
@@ -245,7 +246,7 @@ class DidClientLiveTests(unittest.TestCase):
         if proven == 0:
             self.skipTest(
                 "this resource key returned no identifier for either consent "
-                "string, so the usage-from-consent bit was never read and "
+                "string, so the usage is indirect bit was never read and "
                 "this run did not prove it")
 
 @unittest.skipUnless(
