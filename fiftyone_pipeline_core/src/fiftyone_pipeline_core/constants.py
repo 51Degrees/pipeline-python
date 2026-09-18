@@ -57,3 +57,17 @@ class Constants():
     string.
     """
     EVIDENCE_ENABLE_COOKIES = EVIDENCE_QUERY_PREFIX + EVIDENCE_SEPARATOR + EVIDENCE_ENABLE_COOKIES_SUFFIX
+
+    """!
+    The suffix used when the JavaScriptBuilderElement
+    "object name" parameter is supplied as evidence.
+    """
+    EVIDENCE_OBJECT_NAME_SUFFIX = "fod-js-object-name"
+
+    """!
+    The complete key to be used when the
+    JavaScriptBuilderElement "object name"
+    parameter is supplied as part of the query
+    string.
+    """
+    EVIDENCE_OBJECT_NAME = EVIDENCE_QUERY_PREFIX + EVIDENCE_SEPARATOR + EVIDENCE_OBJECT_NAME_SUFFIX

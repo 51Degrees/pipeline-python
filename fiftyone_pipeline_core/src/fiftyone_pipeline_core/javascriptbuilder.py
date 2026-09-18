@@ -50,6 +50,48 @@ from .constants import Constants
 # reference for this behaviour.
 EXCLUDED_PARAMETERS = ["query.session-id", "query.sequence"]
 
+# The object name is written into the script as the name of a global
+# variable, a session storage key and a property name, all without any
+# escaping. A name that is not a plain JavaScript identifier would therefore
+# break the script or change what it does, so only names matching this
+# pattern that are not reserved words are used.
+OBJECT_NAME_PATTERN = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+
+# Names the object cannot have. These are the reserved words of the language,
+# including those reserved only in strict mode and the literals null, true
+# and false, plus the three global values a top level var cannot replace, so
+# the object would silently never be created, and the name of the constructor
+# the script itself defines.
+RESERVED_WORDS = frozenset([
+    "await", "break", "case", "catch", "class", "const", "continue",
+    "debugger", "default", "delete", "do", "else", "enum", "export",
+    "extends", "false", "finally", "for", "function", "if", "implements",
+    "import", "in", "instanceof", "interface", "let", "new", "null",
+    "package", "private", "protected", "public", "return", "static",
+    "super", "switch", "this", "throw", "true", "try", "typeof", "var",
+    "void", "while", "with", "yield",
+    "Infinity", "NaN", "undefined", "fiftyoneDegreesManager"])
+
+
+def is_valid_object_name(name):
+
+    """!
+    Whether a name can be used as the client side object's name.
+
+    @type name: object
+    @param name: The name to check
+    @rtype: bool
+    @return: True if the name is a JavaScript identifier made of ASCII
+    letters, digits, '_' and '$' that does not start with a digit and is not
+    one of RESERVED_WORDS
+    """
+
+    return (
+        isinstance(name, str)
+        and OBJECT_NAME_PATTERN.fullmatch(name) is not None
+        and name not in RESERVED_WORDS)
+
+
 # The sequence the script is rendered with when the evidence holds no usable
 # value.
 DEFAULT_SEQUENCE = 1
@@ -204,7 +246,14 @@ class JavascriptBuilderElement(FlowElement):
 
         * @param {dict} options options object
         * @param {string} options.obj_name the name of the client
-        * side object with the JavaScript properties in it ('fod' by default)
+        * side object with the JavaScript properties in it ('fod' when
+        * absent or None).
+        * This can be overridden per request with the
+        * "query.fod-js-object-name" evidence key. The name must be a
+        * JavaScript identifier (ASCII letters, digits, '_' and '$', not
+        * starting with a digit) and not a reserved word. An invalid
+        * configured name raises a ValueError, and an invalid requested name
+        * is ignored with a warning logged.
         * @param {string} options.protocol The protocol ("http" or "https")
         * used by the client side callback url.
         * This can be overriden with header.protocol evidence
@@ -225,7 +274,16 @@ class JavascriptBuilderElement(FlowElement):
         
         self.settings = {}
 
-        self.settings['_objName'] = settings["obj_name"] if "obj_name" in settings else 'fod'
+        # A name that is not configured at all, absent or None, means the
+        # default. Any configured name, the empty string included, must be
+        # valid.
+        obj_name = settings.get("obj_name")
+        self.settings['_objName'] = 'fod' if obj_name is None else obj_name
+        if not is_valid_object_name(self.settings['_objName']):
+            raise ValueError(
+                "The JavaScript builder's obj_name setting must be a "
+                "JavaScript identifier (ASCII letters, digits, '_' and '$', "
+                "not starting with a digit) and not a reserved word.")
         self.settings['_protocol'] = settings["protocol"] if "protocol" in settings else None
         self.settings['_host'] = settings["host"] if "host" in settings else None
         self.settings['_endpoint'] = settings["endpoint"] if "endpoint" in settings else ''
@@ -307,6 +365,23 @@ class JavascriptBuilderElement(FlowElement):
             variables["_enableCookies"] = enableCookiesVal.lower() == "true"
 
         variables["_enableCookies"]
+
+        # The page request can ask for a different object name. A name that
+        # is not a valid identifier is ignored, and the configured name is
+        # used, because it would be written into the script as given. The
+        # requested text is left out of the warning so that it cannot reach
+        # the log either.
+        requested_name = flowdata.evidence.get(Constants.EVIDENCE_OBJECT_NAME)
+        if requested_name is not None:
+            if is_valid_object_name(requested_name):
+                variables["_objName"] = requested_name
+            else:
+                self._log(
+                    "warning",
+                    "The requested JavaScript object name ("
+                    + Constants.EVIDENCE_OBJECT_NAME + ") is not a valid "
+                    "JavaScript identifier, so the configured name '"
+                    + self.settings["_objName"] + "' is used.")
 
         query_params = self.get_evidence_key_filter().filter_evidence(flowdata.evidence.get_all())
         # Both are written into the script, so each always has a safe value.
