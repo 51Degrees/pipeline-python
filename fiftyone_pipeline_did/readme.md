@@ -455,8 +455,10 @@ the keys from the newest start it holds, at most once a minute, and
 merges the answer into the keys it holds without dropping any. A date no
 key covers answers `SignatureReason.NO_KEY`. A key may be replaced before
 its end if it is compromised, and the client picks up the replacement on
-the first signature failure, when it fetches once more before reporting
-the failure, or at the daily refresh of the whole list.
+the first signature failure, when it asks for the keys from the one in
+force at the identifier's date before reporting the failure, within the
+same once a minute limit, or at the daily refresh of the whole list. The
+first fetch and the daily refresh are never held back by that limit.
 
 The envelope version must be the one the cloud signs and the payload at
 least the base length for its type, and a longer payload carries a

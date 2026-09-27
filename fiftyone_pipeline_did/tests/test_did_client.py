@@ -50,7 +50,8 @@ from fiftyone_pipeline_did import (
     SignatureReason,
     SignatureResult,
 )
-from fiftyone_pipeline_did.did_client import USER_AGENT, parse_iso8601
+from fiftyone_pipeline_did.did_client import (
+    KEY_LIST_MAX_AGE, USER_AGENT, parse_iso8601)
 # The byte layout is not part of the package's public surface. These tests
 # build payloads byte by byte, so they read it from the private module, as
 # https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
@@ -72,6 +73,7 @@ from .envelope import (
     probabilistic_payload,
     random_payload,
     signed_envelope,
+    iso_round_trip,
     signed_fod_id,
     since_of,
 )
@@ -257,6 +259,18 @@ class PublicKeyTests(unittest.TestCase):
         self.transport.answers["id/key/"] = (200, json.dumps(body))
         with self.assertRaises(DidClientError):
             run(self.client.public_keys())
+
+    def test_an_ends_at_not_after_its_start_makes_the_answer_unreadable(
+            self):
+        for end in (lambda entry: entry["startsAt"],
+                    lambda entry: iso_round_trip(
+                        parse_iso8601(entry["startsAt"])
+                        - timedelta(days=1))):
+            body = json.loads(KeySchedule(ends_at=True).json())
+            body[1]["endsAt"] = end(body[1])
+            self.transport.answers["id/key/"] = (200, json.dumps(body))
+            with self.assertRaises(DidClientError):
+                run(self.client.public_keys())
 
     def test_an_entry_built_from_a_start_and_key_alone_has_no_end(self):
         # Code that builds an entry this way keeps working.
@@ -473,7 +487,10 @@ class KeyListCoverageTests(unittest.TestCase):
         self.assertEqual(SignatureReason.VERIFIED, check.reason)
         self.assertEqual(2, self.fetches())
         self.assertEqual(self.schedule.start(3), self.since())
-        self.assertTrue(since_of(self.transport.last()).endswith("Z"))
+        self.assertEqual(
+            ENDPOINT + "id/key/" + RESOURCE
+            + "?datetime=2026-08-24T00%3A00%3A00Z",
+            self.transport.last().full_url)
         keys = run(self.client.public_keys())
         self.assertEqual([self.schedule.start(i) for i in range(5)],
                          [key.starts_at for key in keys])
@@ -596,10 +613,93 @@ class KeyListCoverageTests(unittest.TestCase):
             check = run(self.client.verify_signature_detailed(forged))
             self.assertEqual(SignatureReason.SIGNATURE, check.reason)
             self.assertEqual(2, self.fetches())
-        self.assertEqual(self.schedule.start(3), self.since())
         self.clock.advance(timedelta(minutes=2))
         run(self.client.verify_signature_detailed(forged))
         self.assertEqual(3, self.fetches())
+
+    def test_a_signature_failure_fetches_from_the_key_in_force_at_its_date(
+            self):
+        # A key that is no longer the newest held is replaced part way
+        # through its period. Asking from the newest start would not bring
+        # the replacement, so the fetch asks from the start of the key in
+        # force at the 51Did's date.
+        run(self.client.public_keys())
+        replaced_at = self.schedule.start(2) + timedelta(days=3)
+        index = self.schedule.replace(2, replaced_at)
+        check = self.verify(self.schedule.crypto(index),
+                            replaced_at + timedelta(hours=1))
+        self.assertEqual(SignatureReason.VERIFIED, check.reason)
+        self.assertEqual(2, self.fetches())
+        self.assertEqual(self.schedule.start(2), self.since())
+        keys = run(self.client.public_keys())
+        self.assertEqual(replaced_at, keys[2].ends_at)
+        self.assertEqual(replaced_at, keys[3].starts_at)
+
+    def test_a_list_fetched_for_the_lookup_is_not_fetched_again(self):
+        # The first fetch is made for this very check, so the list cannot
+        # get better by fetching again before the failure is reported.
+        forged = signed_fod_id(Crypto.new(),
+                               date=self.schedule.start(2)
+                               + timedelta(days=2))
+        check = run(self.client.verify_signature_detailed(forged))
+        self.assertEqual(SignatureReason.SIGNATURE, check.reason)
+        self.assertEqual(1, self.fetches())
+
+    def test_the_first_fetch_does_not_hold_back_a_fetch_for_the_coverage(
+            self):
+        run(self.client.public_keys())
+        later = signed_fod_id(Crypto.new(),
+                              date=self.schedule.end(3) + timedelta(days=3))
+        run(self.client.public_key_for(later))
+        self.assertEqual(2, self.fetches())
+
+    def test_the_daily_refresh_neither_waits_for_nor_counts_toward_the_limit(
+            self):
+        run(self.client.public_keys())
+        later = signed_fod_id(Crypto.new(),
+                              date=self.schedule.end(3) + timedelta(days=3))
+        self.clock.advance(KEY_LIST_MAX_AGE - timedelta(seconds=20))
+        run(self.client.public_key_for(later))
+        self.assertEqual(2, self.fetches())
+        # The list is now a day old. A fetch for the coverage was made
+        # inside the last minute, and the whole list is fetched anyway.
+        self.clock.advance(timedelta(seconds=30))
+        run(self.client.public_keys())
+        self.assertEqual(3, self.fetches())
+        self.assertIsNone(self.since())
+        run(self.client.public_key_for(later))
+        self.assertEqual(3, self.fetches())
+        # A minute after the last fetch for the coverage, though not after
+        # the daily refresh, the next one is made.
+        self.clock.advance(timedelta(seconds=40))
+        run(self.client.public_key_for(later))
+        self.assertEqual(4, self.fetches())
+
+    def test_a_clock_set_back_does_not_hold_back_a_fetch(self):
+        run(self.client.public_keys())
+        later = signed_fod_id(Crypto.new(),
+                              date=self.schedule.end(3) + timedelta(days=3))
+        run(self.client.public_key_for(later))
+        self.assertEqual(2, self.fetches())
+        self.clock.advance(-timedelta(minutes=5))
+        run(self.client.public_key_for(later))
+        self.assertEqual(3, self.fetches())
+
+    def test_an_unreadable_answer_leaves_the_keys_held_as_they_were(self):
+        run(self.client.public_keys())
+        # The cloud publishes the next key, but its answer also carries an
+        # entry that does not end after it starts, so none of it is merged.
+        index = self.schedule.publish_next()
+        body = json.loads(self.schedule.json())
+        body[-1]["endsAt"] = body[-1]["startsAt"]
+        self.transport.answers["id/key/"] = (200, json.dumps(body))
+        with self.assertRaises(DidClientError):
+            run(self.client.public_key_for(signed_fod_id(
+                self.schedule.crypto(index),
+                date=self.schedule.start(index) + timedelta(hours=1))))
+        keys = run(self.client.public_keys())
+        self.assertEqual([self.schedule.start(i) for i in range(4)],
+                         [key.starts_at for key in keys])
 
     def test_a_failed_fetch_raises_and_is_not_retried_inside_the_minute(
             self):

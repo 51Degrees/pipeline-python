@@ -24,8 +24,8 @@
 
 :class:`DidClient` handles every manipulation of a 51Did a server needs
 against the 51Degrees cloud, so server code never builds a cloud URL or
-handles a key itself. It fetches the signing public keys once and caches
-them, picks the key in force when an identifier was created, verifies a
+handles a key itself. It fetches the signing public keys and keeps them,
+picks the key in force when an identifier was created, verifies a
 signature offline against that key, verifies a signature through the
 cloud's verify endpoint, and redeems a sealed creator context result with
 the licence key, returning a typed :class:`RedeemResult`.
@@ -84,10 +84,11 @@ _BOUNDARY_TOLERANCE = timedelta(minutes=15)
 #: also bounds how long a replaced key is trusted offline.
 KEY_LIST_MAX_AGE = timedelta(days=1)
 
-# How long after any fetch, or failed attempt at one, the client waits
-# before fetching again for a date the keys held do not cover or for a
-# signature that failed with every key held, so that a forged date or
-# signature cannot make every lookup call the cloud.
+# The shortest time between two fetches made for a date the keys held do
+# not cover or for a signature that failed with every key held, a failed
+# attempt included, so that a forged date or signature cannot make every
+# lookup call the cloud. The first fetch and the daily refresh neither
+# count toward it nor wait for it.
 _REFETCH_INTERVAL = timedelta(minutes=1)
 
 #: The only envelope version the cloud signs and verifies.
@@ -478,9 +479,9 @@ class DidClient:
         # When the whole list was last fetched, which the daily refresh
         # is measured from.
         self._fetched_at: Optional[datetime] = None
-        # When any fetch was last attempted, which the once a minute limit
-        # is measured from.
-        self._attempted_at: Optional[datetime] = None
+        # When a fetch that the once a minute limit counts was last
+        # started, which the limit is measured from.
+        self._refetched_at: Optional[datetime] = None
         self._fetch_count = 0
 
     @property
@@ -525,7 +526,8 @@ class DidClient:
         force at the date."""
         identifier = _as_fod_id(fod_id)
         date = _date_of(identifier)
-        return _in_force_at(await self._keys_for(date), date)
+        keys, _ = await self._keys_for(date)
+        return _in_force_at(keys, date)
 
     # ----- Offline signature verification -----
 
@@ -539,7 +541,8 @@ class DidClient:
         period boundary, the neighbouring key. No earlier key is ever
         tried. Reaches the cloud only when the key list needs fetching,
         which includes once after a signature fails with every candidate
-        key, at most once a minute, because a key may be replaced before
+        key, asking for the keys from the one in force at the identifier's
+        date, at most once a minute, because a key may be replaced before
         its end."""
         return (await self.verify_signature_detailed(fod_id)).valid
 
@@ -554,15 +557,17 @@ class DidClient:
         if not _payload_length_valid(identifier):
             return SignatureCheck(False, SignatureReason.LENGTH)
         date = _date_of(identifier)
-        candidates = _candidates_for_date(await self._keys_for(date), date)
+        keys, fetched = await self._keys_for(date)
+        candidates = _candidates_for_date(keys, date)
         if not candidates:
             return SignatureCheck(False, SignatureReason.NO_KEY)
         if _verified_by_any(identifier, candidates):
             return SignatureCheck(True, SignatureReason.VERIFIED)
-        # The key held may have been replaced before its end, so the list
-        # is fetched again, unless a fetch was made or attempted in the
-        # last minute, and the check repeated before a failure is reported.
-        keys = await self._keys_after_failure()
+        # The key held may have been replaced before its end, so within the
+        # once a minute limit the check is repeated with the list fetched
+        # again before a failure is reported. A list fetched for this very
+        # call cannot get better.
+        keys = None if fetched else await self._keys_after_failure(date)
         if keys is not None:
             candidates = _candidates_for_date(keys, date)
             if not candidates:
@@ -742,10 +747,12 @@ class DidClient:
             return await self._refresh_locked()
         return self._keys
 
-    async def _keys_for(self, date: datetime) -> List[PublicKeyEntry]:
-        """The key list to select from for the given date, fetched again
-        first where the date is near or past the end of what the keys held
-        cover, unless a fetch was made or attempted in the last minute.
+    async def _keys_for(self, date: datetime) \
+            -> Tuple[List[PublicKeyEntry], bool]:
+        """The key list to select from for the given date, and whether it
+        was fetched for this call. It is fetched again first where the date
+        is near or past the end of what the keys held cover, asking for the
+        keys from the newest start held, within the once a minute limit.
 
         The fetch count is read before waiting for the lock, so a fetch
         that completes while this call waits counts as this call's own,
@@ -756,46 +763,57 @@ class DidClient:
             keys = await self._current_keys_locked()
             if self._fetch_count == fetched_before \
                     and not _covers(keys, date) \
-                    and self._may_fetch_again():
-                keys = await self._refresh_locked(since_newest=True)
-            return keys
+                    and self._may_refetch():
+                keys = await self._refetch_locked(
+                    keys[-1].starts_at if keys else None)
+            return keys, self._fetch_count != fetched_before
 
-    async def _keys_after_failure(self) -> Optional[List[PublicKeyEntry]]:
-        """The key list fetched again, from the newest start held, after a
-        signature failed with every key that could have signed it, or
-        ``None`` where a fetch was made or attempted in the last minute. A
-        key may be replaced before its end, and this finds the replacement
-        without waiting for the daily refresh."""
+    async def _keys_after_failure(self, date: datetime) \
+            -> Optional[List[PublicKeyEntry]]:
+        """The key list fetched again after a signature failed with every
+        key that could have signed it, or ``None`` where the once a minute
+        limit stops the fetch. The keys are asked for from the start of the
+        key held in force at the date, so the answer carries that key's
+        entry, with any earlier end, and a replacement starting inside its
+        period."""
         async with self._loop_lock():
-            if not self._may_fetch_again():
+            if not self._may_refetch():
                 return None
-            return await self._refresh_locked(since_newest=True)
+            return await self._refetch_locked(_started_by(self._keys, date))
 
     def _stale(self) -> bool:
         return self._fetched_at is None \
             or self._now() - self._fetched_at > KEY_LIST_MAX_AGE
 
-    def _may_fetch_again(self) -> bool:
-        """Whether the once a minute limit allows a fetch. Every attempt
-        counts, a failed one included, so a cloud that cannot be reached is
-        not called on every lookup either."""
-        return self._attempted_at is None \
-            or self._now() - self._attempted_at >= _REFETCH_INTERVAL
+    def _may_refetch(self) -> bool:
+        """Whether the once a minute limit allows a fetch for a date the
+        keys held do not cover or after a failed signature. A clock set back
+        is no reason to wait, so only a fetch started less than the interval
+        in the past holds the next one back."""
+        if self._refetched_at is None:
+            return True
+        elapsed = self._now() - self._refetched_at
+        return elapsed < timedelta(0) or elapsed >= _REFETCH_INTERVAL
 
-    async def _refresh_locked(self, since_newest: bool = False) \
+    async def _refetch_locked(self, since: Optional[datetime]) \
+            -> List[PublicKeyEntry]:
+        """Fetches the keys starting at or after ``since``, as a fetch the
+        once a minute limit counts. The limit is measured from before the
+        request, so a failed attempt counts as well."""
+        self._refetched_at = self._now()
+        return await self._refresh_locked(since)
+
+    async def _refresh_locked(self, since: Optional[datetime] = None) \
             -> List[PublicKeyEntry]:
         """Fetches the key list and merges the answer into the keys held.
-        The whole list is asked for on first use and once a day. With
-        ``since_newest`` only the keys from the newest start held are asked
-        for, which is where a new key or a replacement appears. Only a
-        whole list restarts the day, so fetches of part of the list cannot
-        put off the refresh that bounds how long a replaced key is
-        trusted."""
-        held = self._keys or []
-        since = held[-1].starts_at if since_newest and held else None
-        self._attempted_at = self._now()
+        Without ``since`` the whole list is asked for, as on first use and
+        once a day, and only that restarts the list's age, because a key
+        replaced while it is not the newest held may otherwise go unseen,
+        and this refresh bounds how long a replaced key is trusted offline.
+        With ``since`` only the keys starting at or after it are asked
+        for."""
         answer = await self._fetch_keys(since)
-        self._keys = _merge(held, answer)
+        self._keys = _merge(self._keys or [], answer)
         if since is None:
             self._fetched_at = self._now()
         self._fetch_count += 1
@@ -842,6 +860,10 @@ class DidClient:
                 raise DidClientError(
                     "Public keys entry has an end that is not a date and "
                     "time: " + json.dumps(entry), status, body)
+            if ends_at is not None and ends_at <= starts_at:
+                raise DidClientError(
+                    "Public keys entry does not end after it starts: "
+                    + json.dumps(entry), status, body)
             keys.append(PublicKeyEntry(starts_at, public_key, ends_at))
         keys.sort(key=lambda key: key.starts_at)
         return keys
@@ -947,12 +969,25 @@ def _moment_of(value: Any) -> Optional[datetime]:
 
 
 def _format_iso8601(moment: datetime) -> str:
-    """The moment as ISO 8601 UTC to the microsecond. A start read from the
-    cloud's seven fractional digits keeps the first six, so the moment
-    written is never after the cloud's own and a filter on it still lists
-    the entry it came from."""
-    return moment.astimezone(timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%S.%fZ")
+    """The moment as ISO 8601 UTC, with the microseconds only where there
+    are any. A start read from the cloud's seven fractional digits keeps
+    the first six, so the moment written is never after the cloud's own and
+    a filter on it still lists the entry it came from."""
+    moment = moment.astimezone(timezone.utc)
+    fraction = ".{0:06d}".format(moment.microsecond) \
+        if moment.microsecond else ""
+    return moment.strftime("%Y-%m-%dT%H:%M:%S") + fraction + "Z"
+
+
+def _started_by(keys: List[PublicKeyEntry],
+                at: datetime) -> Optional[datetime]:
+    """The start of the newest key held that starts at or before the
+    moment, whatever its end, or of the oldest key where none has started
+    by then. ``None`` for an empty list."""
+    started = [key.starts_at for key in keys if key.starts_at <= at]
+    if started:
+        return max(started)
+    return min((key.starts_at for key in keys), default=None)
 
 
 def _merge(held: List[PublicKeyEntry],
