@@ -78,8 +78,17 @@ ENDPOINT_VARIABLE = "FOD_CLOUD_API_URL"
 
 _BOUNDARY_TOLERANCE = timedelta(minutes=15)
 
-#: A cached key list older than this is fetched again before use.
+#: A cached key list older than this is fetched again, whole, before use.
+#: A key may be replaced before its end, and the client picks up the
+#: replacement on the first signature failure or at this refresh, so this
+#: also bounds how long a replaced key is trusted offline.
 KEY_LIST_MAX_AGE = timedelta(days=1)
+
+# How long after any fetch, or failed attempt at one, the client waits
+# before fetching again for a date the keys held do not cover or for a
+# signature that failed with every key held, so that a forged date or
+# signature cannot make every lookup call the cloud.
+_REFETCH_INTERVAL = timedelta(minutes=1)
 
 #: The only envelope version the cloud signs and verifies.
 SUPPORTED_VERSION = Version.VERSION3
@@ -222,13 +231,18 @@ class DidNotSupportedError(DidClientError):
 
 @dataclass(frozen=True)
 class PublicKeyEntry:
-    """A published signing key and the moment it came into force. A key
-    stays in force until the next key starts."""
+    """A published signing key and the period it is in force, from its
+    start until its end, or until the next key starts where the cloud sent
+    no end."""
 
     #: When the key came, or comes, into force, as an aware UTC datetime.
     starts_at: datetime
     #: The key in SPKI PEM form.
     public_key: str
+    #: When the key stops being in force, as an aware UTC datetime, or
+    #: ``None`` where the cloud sent no end. A key replaced before its
+    #: scheduled end carries the moment it was replaced.
+    ends_at: Optional[datetime] = None
 
 
 @dataclass(frozen=True)
@@ -461,7 +475,12 @@ class DidClient:
         self._lock: Optional[asyncio.Lock] = None
         self._lock_loop: Optional[asyncio.AbstractEventLoop] = None
         self._keys: Optional[List[PublicKeyEntry]] = None
+        # When the whole list was last fetched, which the daily refresh
+        # is measured from.
         self._fetched_at: Optional[datetime] = None
+        # When any fetch was last attempted, which the once a minute limit
+        # is measured from.
+        self._attempted_at: Optional[datetime] = None
         self._fetch_count = 0
 
     @property
@@ -485,21 +504,25 @@ class DidClient:
 
     async def public_keys(self) -> List[PublicKeyEntry]:
         """The published signing keys, oldest first, fetched on first use
-        and then served from the cache until the list is a day old. Keys are
-        published up to three months ahead of their start, so the list
-        holds entries that have not started yet. Concurrent awaits while a
-        fetch is in flight wait for that fetch and share its answer."""
+        and then served from the cache, which is fetched again, whole, once
+        it is a day old. Every answer is merged into the keys held, so no
+        key is dropped and 51Dids made long ago still verify. Concurrent
+        awaits while a fetch is in flight wait for that fetch and share its
+        answer."""
         async with self._loop_lock():
             return list(await self._current_keys_locked())
 
     async def public_key_for(self, fod_id: Union[FodId, str]) \
             -> Optional[PublicKeyEntry]:
         """The key in force when the identifier was created, being the
-        entry whose start is latest on or before the identifier's date. The
-        list is fetched again, once, before answering when no entry covers
-        the date, when the date is later than the newest start held, or
-        when the list is more than a day old. Answers ``None`` when the
-        date precedes every published key."""
+        entry whose start is latest on or before the identifier's date,
+        unless that entry had ended by then. The keys held answer every
+        date before the newest key's end, or before its start where the
+        cloud sent no end. For a date near or past that point the list is
+        fetched again first, asking only for the keys from the newest start
+        held, at most once a minute. The whole list is also fetched again
+        once it is a day old. Answers ``None`` when no key held was in
+        force at the date."""
         identifier = _as_fod_id(fod_id)
         date = _date_of(identifier)
         return _in_force_at(await self._keys_for(date), date)
@@ -514,7 +537,10 @@ class DidClient:
         a creator context and is accepted), and the signature must verify
         against the key in force at the identifier's date or, near a
         period boundary, the neighbouring key. No earlier key is ever
-        tried. Reaches the cloud only when the key list needs fetching."""
+        tried. Reaches the cloud only when the key list needs fetching,
+        which includes once after a signature fails with every candidate
+        key, at most once a minute, because a key may be replaced before
+        its end."""
         return (await self.verify_signature_detailed(fod_id)).valid
 
     async def verify_signature_detailed(self, fod_id: Union[FodId, str]) \
@@ -531,8 +557,17 @@ class DidClient:
         candidates = _candidates_for_date(await self._keys_for(date), date)
         if not candidates:
             return SignatureCheck(False, SignatureReason.NO_KEY)
-        for key in candidates:
-            if identifier.verify(key.public_key):
+        if _verified_by_any(identifier, candidates):
+            return SignatureCheck(True, SignatureReason.VERIFIED)
+        # The key held may have been replaced before its end, so the list
+        # is fetched again, unless a fetch was made or attempted in the
+        # last minute, and the check repeated before a failure is reported.
+        keys = await self._keys_after_failure()
+        if keys is not None:
+            candidates = _candidates_for_date(keys, date)
+            if not candidates:
+                return SignatureCheck(False, SignatureReason.NO_KEY)
+            if _verified_by_any(identifier, candidates):
                 return SignatureCheck(True, SignatureReason.VERIFIED)
         return SignatureCheck(False, SignatureReason.SIGNATURE)
 
@@ -709,47 +744,76 @@ class DidClient:
 
     async def _keys_for(self, date: datetime) -> List[PublicKeyEntry]:
         """The key list to select from for the given date, fetched again
-        once where the rule in :meth:`public_key_for` calls for it and the
-        list was not just fetched.
+        first where the date is near or past the end of what the keys held
+        cover, unless a fetch was made or attempted in the last minute.
 
         The fetch count is read before waiting for the lock, so a fetch
         that completes while this call waits counts as this call's own,
-        and concurrent awaits for a date past the newest start share that
-        one fetch instead of each fetching again after the other."""
+        and concurrent awaits for a date the keys held do not cover share
+        that one fetch instead of each fetching again after the other."""
         fetched_before = self._fetch_count
         async with self._loop_lock():
             keys = await self._current_keys_locked()
             if self._fetch_count == fetched_before \
-                    and self._needs_refetch(keys, date):
-                keys = await self._refresh_locked()
+                    and not _covers(keys, date) \
+                    and self._may_fetch_again():
+                keys = await self._refresh_locked(since_newest=True)
             return keys
 
-    def _needs_refetch(self, keys: List[PublicKeyEntry],
-                       date: datetime) -> bool:
-        if _in_force_at(keys, date) is None:
-            return True
-        if keys and date > keys[-1].starts_at:
-            return True
-        return self._stale()
+    async def _keys_after_failure(self) -> Optional[List[PublicKeyEntry]]:
+        """The key list fetched again, from the newest start held, after a
+        signature failed with every key that could have signed it, or
+        ``None`` where a fetch was made or attempted in the last minute. A
+        key may be replaced before its end, and this finds the replacement
+        without waiting for the daily refresh."""
+        async with self._loop_lock():
+            if not self._may_fetch_again():
+                return None
+            return await self._refresh_locked(since_newest=True)
 
     def _stale(self) -> bool:
         return self._fetched_at is None \
             or self._now() - self._fetched_at > KEY_LIST_MAX_AGE
 
-    async def _refresh_locked(self) -> List[PublicKeyEntry]:
-        keys = await self._fetch_keys()
-        self._keys = keys
-        self._fetched_at = self._now()
-        self._fetch_count += 1
-        return keys
+    def _may_fetch_again(self) -> bool:
+        """Whether the once a minute limit allows a fetch. Every attempt
+        counts, a failed one included, so a cloud that cannot be reached is
+        not called on every lookup either."""
+        return self._attempted_at is None \
+            or self._now() - self._attempted_at >= _REFETCH_INTERVAL
 
-    async def _fetch_keys(self) -> List[PublicKeyEntry]:
-        """GET ``id/key/{resource}`` and read each entry's start and public
-        key. ``startsAt`` is read where present and ``created`` otherwise.
-        Both are supported start fields in key-list responses. ``weekStart``
-        is ignored."""
+    async def _refresh_locked(self, since_newest: bool = False) \
+            -> List[PublicKeyEntry]:
+        """Fetches the key list and merges the answer into the keys held.
+        The whole list is asked for on first use and once a day. With
+        ``since_newest`` only the keys from the newest start held are asked
+        for, which is where a new key or a replacement appears. Only a
+        whole list restarts the day, so fetches of part of the list cannot
+        put off the refresh that bounds how long a replaced key is
+        trusted."""
+        held = self._keys or []
+        since = held[-1].starts_at if since_newest and held else None
+        self._attempted_at = self._now()
+        answer = await self._fetch_keys(since)
+        self._keys = _merge(held, answer)
+        if since is None:
+            self._fetched_at = self._now()
+        self._fetch_count += 1
+        return self._keys
+
+    async def _fetch_keys(self, since: Optional[datetime] = None) \
+            -> List[PublicKeyEntry]:
+        """GET ``id/key/{resource}`` and read each entry's start, end and
+        public key. ``startsAt`` is read where present and ``created``
+        otherwise. Both are supported start fields in key-list responses.
+        ``endsAt`` is read where present and not null. ``weekStart`` is
+        ignored. With ``since``, the ``datetime`` query parameter asks only
+        for the keys that start at or after it."""
         url = "{0}id/key/{1}".format(
             self._endpoint, urllib.parse.quote(self._resource_key, safe=""))
+        if since is not None:
+            url += "?datetime=" + urllib.parse.quote(
+                _format_iso8601(since), safe="")
         status, body = await self._send(urllib.request.Request(
             url, headers={"User-Agent": USER_AGENT}, method="GET"))
         if status != 200:
@@ -763,22 +827,22 @@ class DidClient:
                 "array: " + body, status, body)
         keys = []
         for entry in parsed:
-            start = None
-            public_key = None
+            start = end = public_key = None
             if isinstance(entry, dict):
                 start = entry.get("startsAt") or entry.get("created")
+                end = entry.get("endsAt")
                 public_key = entry.get("publicKey")
-            starts_at = None
-            if isinstance(start, str):
-                try:
-                    starts_at = parse_iso8601(start)
-                except ValueError:
-                    starts_at = None
+            starts_at = _moment_of(start)
             if starts_at is None or not isinstance(public_key, str):
                 raise DidClientError(
                     "Public keys entry lacks a start or a publicKey: "
                     + json.dumps(entry), status, body)
-            keys.append(PublicKeyEntry(starts_at, public_key))
+            ends_at = None if end is None else _moment_of(end)
+            if end is not None and ends_at is None:
+                raise DidClientError(
+                    "Public keys entry has an end that is not a date and "
+                    "time: " + json.dumps(entry), status, body)
+            keys.append(PublicKeyEntry(starts_at, public_key, ends_at))
         keys.sort(key=lambda key: key.starts_at)
         return keys
 
@@ -871,25 +935,82 @@ def _payload_length_valid(fod_id: FodId) -> bool:
     return len(fod_id.payload) >= HEADER_LENGTH + match_key_length
 
 
+def _moment_of(value: Any) -> Optional[datetime]:
+    """An ISO 8601 date and time from a key list entry, or ``None`` where
+    the value is not one."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse_iso8601(value)
+    except ValueError:
+        return None
+
+
+def _format_iso8601(moment: datetime) -> str:
+    """The moment as ISO 8601 UTC to the microsecond. A start read from the
+    cloud's seven fractional digits keeps the first six, so the moment
+    written is never after the cloud's own and a filter on it still lists
+    the entry it came from."""
+    return moment.astimezone(timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _merge(held: List[PublicKeyEntry],
+           answer: List[PublicKeyEntry]) -> List[PublicKeyEntry]:
+    """The keys held with an answer merged in by start, oldest first. An
+    entry in the answer replaces the held entry with the same start,
+    because a later answer may carry an end the held copy lacks, or an
+    earlier end where the key was replaced. No held entry is dropped,
+    because 51Dids made long ago verify against the keys of their own
+    periods."""
+    by_start = {key.starts_at: key for key in held}
+    for key in answer:
+        by_start[key.starts_at] = key
+    return sorted(by_start.values(), key=lambda key: key.starts_at)
+
+
+def _covers(keys: List[PublicKeyEntry], date: datetime) -> bool:
+    """Whether the keys held, oldest first, answer the date without a
+    fetch. They cover every date more than the boundary tolerance before
+    the newest key's end, or before its start where the cloud sent no end,
+    because a key without an end is in force until a start not yet
+    known."""
+    if not keys:
+        return False
+    newest = keys[-1]
+    end = newest.ends_at if newest.ends_at is not None \
+        else newest.starts_at
+    return date + _BOUNDARY_TOLERANCE < end
+
+
 def _in_force_at(keys: List[PublicKeyEntry],
                  at: datetime) -> Optional[PublicKeyEntry]:
     """The entry in force at the moment, being the newest whose start has
-    passed, or ``None`` when the moment precedes every entry."""
+    passed, or ``None`` when the moment precedes every entry or that entry
+    has ended by then."""
     best = None
     for key in keys:
         if key.starts_at > at:
             continue
         if best is None or key.starts_at > best.starts_at:
             best = key
+    if best is not None and best.ends_at is not None \
+            and at >= best.ends_at:
+        return None
     return best
+
+
+def _verified_by_any(fod_id: FodId, keys: List[PublicKeyEntry]) -> bool:
+    return any(fod_id.verify(key.public_key) for key in keys)
 
 
 def _candidates_for_date(keys: List[PublicKeyEntry],
                          at: datetime) -> List[PublicKeyEntry]:
     """The entries that may have signed something created at the moment,
     best first: the entry in force, then the entry in force a tolerance
-    earlier and the entry in force a tolerance later where those
-    differ."""
+    earlier and the entry in force a tolerance later where those differ.
+    Empty where no key held was in force at any of those moments, which is
+    answered as no key rather than as a failed signature."""
     candidates: List[PublicKeyEntry] = []
 
     def add(entry: Optional[PublicKeyEntry]) -> None:

@@ -34,6 +34,7 @@ from owid import Crypto, Owid, Version
 from owid import io as owid_io
 
 from fiftyone_pipeline_did import FodId
+from fiftyone_pipeline_did.did_client import parse_iso8601
 # The named terms value is private to the package and is not exported, so
 # the payload builders here reach the private module directly, as the
 # package surface page says the package's own tests may.
@@ -144,16 +145,22 @@ def iso_round_trip(moment):
 
 
 class KeySchedule:
-    """Four weekly keys, Monday 00:00 UTC starts, each with its own key
-    pair, published the way the cloud publishes them."""
+    """Weekly keys by default, Monday 00:00 UTC starts, each with its own
+    key pair, published the way the cloud publishes them. With
+    ``ends_at`` each entry also carries the moment its key stops being in
+    force, as the cloud sends ``endsAt``. Without it the list has the
+    shape an older cloud sends."""
 
     FIRST_START = datetime(2026, 8, 3, tzinfo=timezone.utc)
 
-    def __init__(self, count=4, spacing=timedelta(days=7)):
-        self.entries = []
-        for i in range(count):
-            crypto = Crypto.new()
-            self.entries.append((self.FIRST_START + spacing * i, crypto))
+    def __init__(self, count=4, spacing=timedelta(days=7), ends_at=False):
+        self.spacing = spacing
+        # Each entry is [start, key pair, end], a list so that a test can
+        # end a key early.
+        self.entries = [[self.FIRST_START + spacing * i, Crypto.new(), None]
+                        for i in range(count)]
+        if ends_at:
+            self.add_ends()
 
     def start(self, index):
         return self.entries[index][0]
@@ -161,11 +168,55 @@ class KeySchedule:
     def crypto(self, index):
         return self.entries[index][1]
 
-    def json(self, start_field="startsAt"):
+    def end(self, index):
+        return self.entries[index][2]
+
+    def add_ends(self):
+        """Gives each entry the next entry's start as its end, and the
+        newest the start of the key after it, which is not published
+        yet."""
+        ordered = sorted(self.entries, key=lambda entry: entry[0])
+        for entry, following in zip(ordered, ordered[1:]):
+            entry[2] = following[0]
+        ordered[-1][2] = ordered[-1][0] + self.spacing
+
+    def publish_next(self):
+        """Publishes the key that starts where the newest one ends, as the
+        cloud does once that key's period starts, and answers its
+        index."""
+        newest = max(self.entries, key=lambda entry: entry[0])
+        starts_at = newest[2] or newest[0] + self.spacing
+        ends_at = starts_at + self.spacing if newest[2] else None
+        self.entries.append([starts_at, Crypto.new(), ends_at])
+        return len(self.entries) - 1
+
+    def end_early(self, index, at):
+        """Ends the key at the moment rather than at its scheduled end, as
+        the cloud does when a key has to be changed, and answers the
+        scheduled end."""
+        entry = self.entries[index]
+        scheduled = entry[2]
+        entry[2] = at
+        return scheduled
+
+    def replace(self, index, at):
+        """Ends the key early at the moment and publishes a replacement
+        from then to the replaced key's scheduled end, and answers the
+        replacement's index."""
+        scheduled = self.end_early(index, at)
+        self.entries.append([at, Crypto.new(), scheduled])
+        return len(self.entries) - 1
+
+    def json(self, start_field="startsAt", since=None):
         """The key list body. ``start_field`` is either supported start
-        field, ``startsAt`` or the compatibility field ``created``."""
+        field, ``startsAt`` or the compatibility field ``created``. Where
+        ``since`` is given only the entries starting at or after it are
+        listed, as the route's ``datetime`` parameter does."""
         keys = []
-        for starts_at, crypto in self.entries:
+        for starts_at, crypto, ends_at in sorted(
+                self.entries, key=lambda entry: entry[0]):
+            if since is not None and starts_at < since:
+                continue
             entry = {"publicKey": crypto.public_key_pem()}
             if start_field == "startsAt":
                 entry["startsAt"] = iso_round_trip(starts_at)
@@ -174,11 +225,20 @@ class KeySchedule:
                     starts_at - timedelta(days=90))
             else:
                 entry["created"] = iso_round_trip(starts_at)
+            if ends_at is not None:
+                entry["endsAt"] = iso_round_trip(ends_at)
             keys.append(entry)
         # Newest first, to prove the client sorts rather than trusts the
         # order it was given.
         keys.reverse()
         return json.dumps(keys)
+
+    def answer(self, request):
+        """The key route's answer to a request, honouring the ``datetime``
+        query parameter the request carries."""
+        since = since_of(request)
+        return 200, self.json(
+            since=None if since is None else parse_iso8601(since))
 
 
 class FakeTransport:
@@ -217,6 +277,14 @@ class FakeTransport:
 
     def last(self):
         return self.requests[-1]
+
+
+def since_of(request):
+    """The ``datetime`` query value a key list request carried, or ``None``
+    where it carried none."""
+    values = urllib.parse.parse_qs(
+        urllib.parse.urlparse(request.full_url).query).get("datetime")
+    return values[0] if values else None
 
 
 def form_of(request):
