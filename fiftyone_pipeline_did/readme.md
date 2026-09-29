@@ -443,13 +443,16 @@ fod_id = FodId.from_base64(fifty_one_did)
 **2. Verify the signature offline.** The client fetches the published
 signing public keys from the cloud, caches them, and picks the key in
 force when the identifier was created, being the entry whose start is
-latest on or before the identifier's date. A key stays in force until its
-end, `ends_at`, or until the next key starts where the cloud sent no end.
-Near a period boundary the neighbouring key is tried as well. No earlier
-key is ever tried.
+latest on or before the identifier's date. The cloud publishes only keys
+whose period has started, plus the next key from fifteen minutes before
+its start, and every entry carries `starts_at` and `ends_at`, the next
+key's start, the newest entry included although the next key is not yet
+published. A key stays in force until its end, `ends_at`, or until the
+next key starts where a service sent no end. Near a period boundary the
+neighbouring key is tried as well. No earlier key is ever tried.
 
 The keys held answer every date before the newest key's end, or before
-its start where the cloud sent no end, so a server verifies offline for
+its start where a service sent no end, so a server verifies offline for
 the whole period it holds. For a later date the client asks the cloud for
 the keys from the newest start it holds, at most once a minute, and
 merges the answer into the keys it holds without dropping any. A date no
@@ -506,8 +509,11 @@ redeemed.context                  # ContextResult: VERIFIED, MISMATCH,
                                   #   UNREADABLE, UNCONFIRMED
 redeemed.signature                # SignatureResult: VERIFIED, INVALID
                                   #   or UNKNOWN
-redeemed.factors                  # only where there is something to
-                                  #   diagnose, name to FactorResult
+redeemed.factors                  # on a mismatch, on a misconfigured
+                                  #   result where the transport was
+                                  #   compared, and whenever any factor
+                                  #   is NOT_RECORDED, whatever the
+                                  #   overall result. Name to FactorResult
                                   #   (VERIFIED, MISMATCH, MISCONFIGURED
                                   #   or NOT_RECORDED) or None where
                                   #   nothing was compared, for
@@ -529,7 +535,10 @@ Neither `MISCONFIGURED` nor `NOT_RECORDED` is a mismatch, and neither
 must ever be read as one, but they say different things, because
 `MISCONFIGURED` means the checking service could not determine the factor
 whilst `NOT_RECORDED` means the creating service recorded no value for
-it, so the identifier says nothing about it.
+it, so the identifier says nothing about it. A `NOT_RECORDED` factor is
+left out of the overall result, so `VERIFIED` can arrive beside factors
+that are `NOT_RECORDED`, and `factors` is sent whenever any factor is, so
+a receiver of `VERIFIED` sees how many factors it rests on.
 
 A context string this package does not know maps to `UNREADABLE`, so an
 unrecognised outcome is never mistaken for a good one, and `context_raw`
