@@ -45,11 +45,13 @@ from fiftyone_pipeline_did import (
     FodId,
     FodIdParseStatus,
     OwidError,
+    PublicKeyEntry,
     RedeemResult,
     SignatureReason,
     SignatureResult,
 )
-from fiftyone_pipeline_did.did_client import USER_AGENT, parse_iso8601
+from fiftyone_pipeline_did.did_client import (
+    KEY_LIST_MAX_AGE, USER_AGENT, parse_iso8601)
 # The byte layout is not part of the package's public surface. These tests
 # build payloads byte by byte, so they read it from the private module, as
 # https://github.com/51Degrees/specifications/blob/main/did-specification/package-surface.md
@@ -71,7 +73,9 @@ from .envelope import (
     probabilistic_payload,
     random_payload,
     signed_envelope,
+    iso_round_trip,
     signed_fod_id,
+    since_of,
 )
 
 RESOURCE = "AQAAAAAAAAA-resource"
@@ -227,6 +231,52 @@ class PublicKeyTests(unittest.TestCase):
         self.assertEqual([self.schedule.start(i) for i in range(4)],
                          [k.starts_at for k in keys])
 
+    def test_ends_at_is_read_where_present(self):
+        schedule = KeySchedule(ends_at=True)
+        self.transport.answers["id/key/"] = (200, schedule.json())
+        keys = run(self.client.public_keys())
+        self.assertEqual([schedule.end(i) for i in range(4)],
+                         [k.ends_at for k in keys])
+
+    def test_entries_without_ends_at_are_valid(self):
+        # An older cloud sends no end.
+        keys = run(self.client.public_keys())
+        self.assertEqual(4, len(keys))
+        self.assertEqual([None] * 4, [k.ends_at for k in keys])
+
+    def test_a_null_ends_at_is_read_as_absent(self):
+        body = json.loads(KeySchedule(ends_at=True).json())
+        # The body lists the newest entry first.
+        body[0]["endsAt"] = None
+        self.transport.answers["id/key/"] = (200, json.dumps(body))
+        keys = run(self.client.public_keys())
+        self.assertIsNone(keys[-1].ends_at)
+        self.assertIsNotNone(keys[0].ends_at)
+
+    def test_an_ends_at_that_is_not_a_date_raises(self):
+        body = json.loads(KeySchedule(ends_at=True).json())
+        body[0]["endsAt"] = "next week"
+        self.transport.answers["id/key/"] = (200, json.dumps(body))
+        with self.assertRaises(DidClientError):
+            run(self.client.public_keys())
+
+    def test_an_ends_at_not_after_its_start_makes_the_answer_unreadable(
+            self):
+        for end in (lambda entry: entry["startsAt"],
+                    lambda entry: iso_round_trip(
+                        parse_iso8601(entry["startsAt"])
+                        - timedelta(days=1))):
+            body = json.loads(KeySchedule(ends_at=True).json())
+            body[1]["endsAt"] = end(body[1])
+            self.transport.answers["id/key/"] = (200, json.dumps(body))
+            with self.assertRaises(DidClientError):
+                run(self.client.public_keys())
+
+    def test_an_entry_built_from_a_start_and_key_alone_has_no_end(self):
+        # Code that builds an entry this way keeps working.
+        entry = PublicKeyEntry(self.schedule.start(0), "a public key")
+        self.assertIsNone(entry.ends_at)
+
     def test_second_call_is_a_cache_hit(self):
         run(self.client.public_keys())
         run(self.client.public_keys())
@@ -241,16 +291,26 @@ class PublicKeyTests(unittest.TestCase):
         self.assertEqual(self.schedule.start(1), key.starts_at)
         self.assertEqual(1, self.transport.count("id/key/"))
 
-    def test_date_later_than_the_newest_start_refetches_once(self):
+    def test_date_past_the_newest_start_fetches_at_most_once_a_minute(self):
+        # The list here carries no ends, as an older cloud sends it, so it
+        # covers dates up to the newest start. A date past that fetches
+        # the list again from the newest start, at most once a minute, so
+        # a date in a period not yet published, or a forged one, cannot
+        # make every lookup call the cloud.
         run(self.client.public_keys())
         fod_id = signed_fod_id(self.schedule.crypto(3),
                                date=self.schedule.start(3)
                                + timedelta(days=1))
+        self.clock.advance(timedelta(minutes=2))
         key = run(self.client.public_key_for(fod_id))
-        # Held from the warm-up, then fetched again because the date is
-        # past the newest start held, and not a third time.
-        self.assertEqual(2, self.transport.count("id/key/"))
         self.assertEqual(self.schedule.start(3), key.starts_at)
+        self.assertEqual(2, self.transport.count("id/key/"))
+        since = since_of(self.transport.last())
+        self.assertIsNotNone(since)
+        self.assertEqual(self.schedule.start(3), parse_iso8601(since))
+        run(self.client.public_key_for(fod_id))
+        self.assertEqual(2, self.transport.count("id/key/"))
+        self.clock.advance(timedelta(minutes=2))
         run(self.client.public_key_for(fod_id))
         self.assertEqual(3, self.transport.count("id/key/"))
 
@@ -265,13 +325,16 @@ class PublicKeyTests(unittest.TestCase):
                          run(self.client.public_key_for(fod_id)).starts_at)
         self.assertEqual(1, self.transport.count("id/key/"))
 
-    def test_date_before_the_schedule_refetches_once_and_answers_none(self):
+    def test_date_before_the_schedule_answers_none_with_no_request(self):
+        # The cloud only adds keys that start after the newest one held,
+        # so no fetch could bring a key for a date before the whole list.
         run(self.client.public_keys())
+        self.clock.advance(timedelta(minutes=2))
         fod_id = signed_fod_id(self.schedule.crypto(0),
                                date=self.schedule.start(0)
                                - timedelta(days=1))
         self.assertIsNone(run(self.client.public_key_for(fod_id)))
-        self.assertEqual(2, self.transport.count("id/key/"))
+        self.assertEqual(1, self.transport.count("id/key/"))
 
     def test_list_older_than_a_day_is_refetched(self):
         run(self.client.public_keys())
@@ -356,6 +419,368 @@ class ConcurrentKeyFetchTests(unittest.TestCase):
         run(self.client.public_keys())
         run(self.client.public_keys())
         self.assertEqual(1, self.transport.count("id/key/"))
+
+
+class KeyListCoverageTests(unittest.TestCase):
+    """The held key list answers every date it covers offline, being the
+    dates before the newest entry's end, or before its start where the
+    cloud sent no end. For a date near or past that point the list is
+    fetched again, from the newest start held and at most once a minute,
+    and every answer is merged into the list held.
+
+    Dates sit a long way either side of the boundary allowance, as in
+    KeySelectionTests, so these tests do not record how wide it is. The
+    clock moves on a few minutes before each lookup that may fetch, so
+    the once a minute limit is never the reason a fetch is not made
+    unless a test says so."""
+
+    def setUp(self):
+        self.schedule = KeySchedule(ends_at=True)
+        self.clock = FixedClock(self.schedule.start(3) + timedelta(days=1))
+        self.transport = FakeTransport({"id/key/": self.schedule.answer})
+        self.client = DidClient(RESOURCE, endpoint=ENDPOINT,
+                                transport=self.transport, now=self.clock)
+
+    def use(self, schedule):
+        """Answers key requests from a different schedule."""
+        self.schedule = schedule
+        self.transport.answers["id/key/"] = schedule.answer
+
+    def fetches(self):
+        return self.transport.count("id/key/")
+
+    def since(self):
+        """The start the latest key request asked from, or ``None`` where
+        it asked for the whole list."""
+        value = since_of(self.transport.last())
+        return None if value is None else parse_iso8601(value)
+
+    def verify(self, crypto, date):
+        return run(self.client.verify_signature_detailed(
+            signed_fod_id(crypto, date=date)))
+
+    def test_dates_inside_the_newest_period_verify_with_no_request(self):
+        # Each 51Did is dated inside the newest entry's period, which ends
+        # a week after it starts, so after the first fetch every check is
+        # made offline, however far past the newest start the date is.
+        self.clock.now = self.schedule.start(3) + timedelta(days=6)
+        for offset in (timedelta(hours=1), timedelta(days=1),
+                       timedelta(days=2), timedelta(days=4),
+                       timedelta(days=5, hours=12)):
+            self.clock.advance(timedelta(minutes=2))
+            check = self.verify(self.schedule.crypto(3),
+                                self.schedule.start(3) + offset)
+            self.assertEqual(SignatureReason.VERIFIED, check.reason)
+        self.assertEqual(1, self.fetches())
+
+    def test_a_date_past_the_coverage_fetches_once_from_the_newest_start(
+            self):
+        self.clock.now = self.schedule.end(3) - timedelta(hours=1)
+        run(self.client.public_keys())
+        # The next key starts where the newest one held ends, and the
+        # cloud publishes it once its period starts.
+        index = self.schedule.publish_next()
+        self.clock.advance(timedelta(hours=2))
+        check = self.verify(self.schedule.crypto(index),
+                            self.schedule.start(index)
+                            + timedelta(minutes=30))
+        self.assertEqual(SignatureReason.VERIFIED, check.reason)
+        self.assertEqual(2, self.fetches())
+        self.assertEqual(self.schedule.start(3), self.since())
+        self.assertEqual(
+            ENDPOINT + "id/key/" + RESOURCE
+            + "?datetime=2026-08-24T00%3A00%3A00Z",
+            self.transport.last().full_url)
+        keys = run(self.client.public_keys())
+        self.assertEqual([self.schedule.start(i) for i in range(5)],
+                         [key.starts_at for key in keys])
+        self.assertEqual(self.schedule.end(index), keys[4].ends_at)
+        self.assertEqual(2, self.fetches())
+
+    def test_todays_shape_makes_no_request_for_a_current_date(self):
+        # No ends, and keys published weeks ahead, as the cloud sends the
+        # list today, so the list covers dates up to the newest start.
+        self.use(KeySchedule(count=8))
+        self.clock.now = self.schedule.start(2) + timedelta(days=3)
+        for hours in (0, 1, 6, 24, 48):
+            self.clock.advance(timedelta(minutes=2))
+            check = self.verify(self.schedule.crypto(2),
+                                self.clock.now - timedelta(hours=hours))
+            self.assertEqual(SignatureReason.VERIFIED, check.reason)
+        self.assertEqual(1, self.fetches())
+
+    def test_dates_past_the_coverage_fetch_once_a_minute_and_find_no_key(
+            self):
+        run(self.client.public_keys())
+        self.clock.advance(timedelta(minutes=2))
+        # Signed by a key the cloud has not published and dated in a
+        # period that has not started, as a forged future date would be.
+        unpublished = Crypto.new()
+        first = signed_fod_id(unpublished,
+                              date=self.schedule.end(3) + timedelta(days=3))
+        second = signed_fod_id(unpublished,
+                               date=self.schedule.end(3)
+                               + timedelta(days=30))
+        for fod_id in (first, second):
+            check = run(self.client.verify_signature_detailed(fod_id))
+            self.assertFalse(check.valid)
+            self.assertEqual(SignatureReason.NO_KEY, check.reason)
+        self.assertIsNone(run(self.client.public_key_for(first)))
+        # One fetch, from the newest start held, for the first lookup and
+        # none for the others inside the same minute.
+        self.assertEqual(2, self.fetches())
+        self.assertEqual(self.schedule.start(3), self.since())
+
+    def test_a_later_answer_with_an_end_replaces_the_held_entry(self):
+        self.use(KeySchedule())
+        run(self.client.public_keys())
+        # The cloud now sends ends. A date past the newest start held
+        # fetches the list again from that start.
+        self.schedule.add_ends()
+        self.clock.advance(timedelta(minutes=2))
+        self.verify(self.schedule.crypto(3),
+                    self.schedule.start(3) + timedelta(days=2))
+        self.assertEqual(2, self.fetches())
+        self.assertEqual(self.schedule.start(3), self.since())
+        keys = run(self.client.public_keys())
+        # The answer's copy of the newest entry replaced the held one. The
+        # older entries were not in the answer and are kept as they were.
+        self.assertEqual([self.schedule.start(i) for i in range(4)],
+                         [key.starts_at for key in keys])
+        self.assertEqual(self.schedule.end(3), keys[3].ends_at)
+        self.assertEqual([None, None, None],
+                         [key.ends_at for key in keys[:3]])
+        # The list now covers the rest of the newest period.
+        self.clock.advance(timedelta(minutes=2))
+        self.verify(self.schedule.crypto(3),
+                    self.schedule.start(3) + timedelta(days=4))
+        self.assertEqual(2, self.fetches())
+
+    def test_a_key_replaced_mid_period_is_picked_up_on_a_signature_failure(
+            self):
+        run(self.client.public_keys())
+        # The key in force is ended early, and a replacement published
+        # from that moment to the replaced key's end.
+        replaced_at = self.clock.now + timedelta(hours=1)
+        index = self.schedule.replace(3, replaced_at)
+        self.clock.advance(timedelta(hours=3))
+        dated = replaced_at + timedelta(hours=1)
+        # A genuine 51Did from the replacement fails with the held key, so
+        # the list is fetched once, from the newest start held, and the
+        # check is made again with the merged list.
+        check = self.verify(self.schedule.crypto(index), dated)
+        self.assertEqual(SignatureReason.VERIFIED, check.reason)
+        self.assertEqual(2, self.fetches())
+        self.assertEqual(self.schedule.start(3), self.since())
+        # The replaced key now ends where the replacement starts, so a
+        # 51Did it signed dated after that is refused, and with the list
+        # fetched inside the last minute no request is made.
+        check = self.verify(self.schedule.crypto(3), dated)
+        self.assertEqual(SignatureReason.SIGNATURE, check.reason)
+        self.assertEqual(2, self.fetches())
+        # One it signed before the replacement still verifies.
+        check = self.verify(self.schedule.crypto(3),
+                            replaced_at - timedelta(hours=1))
+        self.assertEqual(SignatureReason.VERIFIED, check.reason)
+        keys = run(self.client.public_keys())
+        self.assertEqual(replaced_at, keys[3].ends_at)
+        self.assertEqual(replaced_at, keys[4].starts_at)
+        self.assertEqual(2, self.fetches())
+
+    def test_a_key_ended_before_the_date_leaves_no_key_after_the_fetch(self):
+        # The key in force is ended at a moment still to come, and the
+        # cloud publishes no replacement before that moment. A 51Did dated
+        # after it fails with the held key, and once the list is merged no
+        # key held covers its date, which is answered as no key rather
+        # than as a failed signature.
+        run(self.client.public_keys())
+        ends_at = self.clock.now + timedelta(days=2)
+        self.schedule.end_early(3, ends_at)
+        self.clock.advance(timedelta(minutes=2))
+        check = self.verify(Crypto.new(), ends_at + timedelta(days=1))
+        self.assertEqual(SignatureReason.NO_KEY, check.reason)
+        self.assertEqual(2, self.fetches())
+
+    def test_a_signature_failure_fetches_at_most_once_a_minute(self):
+        run(self.client.public_keys())
+        # Dated well inside the coverage, in an older period, and signed
+        # by a key the cloud never published.
+        forged = signed_fod_id(Crypto.new(),
+                               date=self.schedule.start(2)
+                               + timedelta(days=2))
+        self.clock.advance(timedelta(minutes=2))
+        for _ in range(2):
+            check = run(self.client.verify_signature_detailed(forged))
+            self.assertEqual(SignatureReason.SIGNATURE, check.reason)
+            self.assertEqual(2, self.fetches())
+        self.clock.advance(timedelta(minutes=2))
+        run(self.client.verify_signature_detailed(forged))
+        self.assertEqual(3, self.fetches())
+
+    def test_a_signature_failure_fetches_from_the_key_in_force_at_its_date(
+            self):
+        # A key that is no longer the newest held is replaced part way
+        # through its period. Asking from the newest start would not bring
+        # the replacement, so the fetch asks from the start of the key in
+        # force at the 51Did's date.
+        run(self.client.public_keys())
+        replaced_at = self.schedule.start(2) + timedelta(days=3)
+        index = self.schedule.replace(2, replaced_at)
+        check = self.verify(self.schedule.crypto(index),
+                            replaced_at + timedelta(hours=1))
+        self.assertEqual(SignatureReason.VERIFIED, check.reason)
+        self.assertEqual(2, self.fetches())
+        self.assertEqual(self.schedule.start(2), self.since())
+        keys = run(self.client.public_keys())
+        self.assertEqual(replaced_at, keys[2].ends_at)
+        self.assertEqual(replaced_at, keys[3].starts_at)
+
+    def test_a_list_fetched_for_the_lookup_is_not_fetched_again(self):
+        # The first fetch is made for this very check, so the list cannot
+        # get better by fetching again before the failure is reported.
+        forged = signed_fod_id(Crypto.new(),
+                               date=self.schedule.start(2)
+                               + timedelta(days=2))
+        check = run(self.client.verify_signature_detailed(forged))
+        self.assertEqual(SignatureReason.SIGNATURE, check.reason)
+        self.assertEqual(1, self.fetches())
+
+    def test_the_first_fetch_does_not_hold_back_a_fetch_for_the_coverage(
+            self):
+        run(self.client.public_keys())
+        later = signed_fod_id(Crypto.new(),
+                              date=self.schedule.end(3) + timedelta(days=3))
+        run(self.client.public_key_for(later))
+        self.assertEqual(2, self.fetches())
+
+    def test_the_daily_refresh_neither_waits_for_nor_counts_toward_the_limit(
+            self):
+        run(self.client.public_keys())
+        later = signed_fod_id(Crypto.new(),
+                              date=self.schedule.end(3) + timedelta(days=3))
+        self.clock.advance(KEY_LIST_MAX_AGE - timedelta(seconds=20))
+        run(self.client.public_key_for(later))
+        self.assertEqual(2, self.fetches())
+        # The list is now a day old. A fetch for the coverage was made
+        # inside the last minute, and the whole list is fetched anyway.
+        self.clock.advance(timedelta(seconds=30))
+        run(self.client.public_keys())
+        self.assertEqual(3, self.fetches())
+        self.assertIsNone(self.since())
+        run(self.client.public_key_for(later))
+        self.assertEqual(3, self.fetches())
+        # A minute after the last fetch for the coverage, though not after
+        # the daily refresh, the next one is made.
+        self.clock.advance(timedelta(seconds=40))
+        run(self.client.public_key_for(later))
+        self.assertEqual(4, self.fetches())
+
+    def test_a_clock_set_back_does_not_hold_back_a_fetch(self):
+        run(self.client.public_keys())
+        later = signed_fod_id(Crypto.new(),
+                              date=self.schedule.end(3) + timedelta(days=3))
+        run(self.client.public_key_for(later))
+        self.assertEqual(2, self.fetches())
+        self.clock.advance(-timedelta(minutes=5))
+        run(self.client.public_key_for(later))
+        self.assertEqual(3, self.fetches())
+
+    def test_an_unreadable_answer_leaves_the_keys_held_as_they_were(self):
+        run(self.client.public_keys())
+        # The cloud publishes the next key, but its answer also carries an
+        # entry that does not end after it starts, so none of it is merged.
+        index = self.schedule.publish_next()
+        body = json.loads(self.schedule.json())
+        body[-1]["endsAt"] = body[-1]["startsAt"]
+        self.transport.answers["id/key/"] = (200, json.dumps(body))
+        with self.assertRaises(DidClientError):
+            run(self.client.public_key_for(signed_fod_id(
+                self.schedule.crypto(index),
+                date=self.schedule.start(index) + timedelta(hours=1))))
+        keys = run(self.client.public_keys())
+        self.assertEqual([self.schedule.start(i) for i in range(4)],
+                         [key.starts_at for key in keys])
+
+    def test_a_failed_fetch_raises_and_is_not_retried_inside_the_minute(
+            self):
+        run(self.client.public_keys())
+        self.transport.answers["id/key/"] = urllib.error.URLError(
+            "no route to host")
+        self.clock.advance(timedelta(minutes=2))
+        later = signed_fod_id(Crypto.new(),
+                              date=self.schedule.end(3) + timedelta(days=3))
+        with self.assertRaises(OSError):
+            run(self.client.verify_signature(later))
+        # The attempt counts toward the limit, so a cloud that cannot be
+        # reached is not called on every lookup, and the held list answers
+        # in the meantime.
+        check = run(self.client.verify_signature_detailed(later))
+        self.assertEqual(SignatureReason.NO_KEY, check.reason)
+        self.assertEqual(2, self.fetches())
+
+    def test_the_daily_refresh_asks_for_the_whole_list(self):
+        run(self.client.public_keys())
+        self.assertIsNone(self.since())
+        # A fetch for a date past the coverage asks only from the newest
+        # start, and does not put off the daily refresh of the whole list,
+        # which bounds how long a replaced key is trusted offline.
+        self.clock.advance(timedelta(hours=12))
+        run(self.client.public_key_for(signed_fod_id(
+            Crypto.new(), date=self.schedule.end(3) + timedelta(days=1))))
+        self.assertEqual(self.schedule.start(3), self.since())
+        self.clock.advance(timedelta(hours=13))
+        run(self.client.public_keys())
+        self.assertEqual(3, self.fetches())
+        self.assertIsNone(self.since())
+
+
+class ConcurrentRefetchTests(unittest.TestCase):
+    """Lookups at the same moment share one fetch when the held list is
+    fetched again, whether for a date past its coverage or after a
+    signature failure. The scripted answer yields to the event loop, so
+    the second lookup waits while the first fetch is in flight."""
+
+    def setUp(self):
+        self.schedule = KeySchedule(ends_at=True)
+        self.clock = FixedClock(self.schedule.start(3) + timedelta(days=1))
+        self.transport = FakeTransport({"id/key/": self.slow_answer})
+        self.client = DidClient(RESOURCE, endpoint=ENDPOINT,
+                                transport=self.transport, now=self.clock)
+        run(self.client.public_keys())
+
+    async def slow_answer(self, request):
+        await asyncio.sleep(0.01)
+        return self.schedule.answer(request)
+
+    def both(self, fod_id):
+        async def gather():
+            return await asyncio.gather(
+                self.client.verify_signature_detailed(fod_id),
+                self.client.verify_signature_detailed(fod_id))
+        return asyncio.run(gather())
+
+    def test_lookups_past_the_coverage_share_one_fetch(self):
+        self.clock.advance(timedelta(minutes=2))
+        first, second = self.both(signed_fod_id(
+            Crypto.new(), date=self.schedule.end(3) + timedelta(days=3)))
+        self.assertEqual(2, self.transport.count("id/key/"))
+        self.assertEqual(SignatureReason.NO_KEY, first.reason)
+        self.assertEqual(first, second)
+
+    def test_signature_failures_share_one_fetch_and_its_answer(self):
+        # The key in force was replaced, so the first check fails with the
+        # held key and fetches the list again. The second waits for that
+        # fetch and checks with its answer, rather than failing against
+        # the list it would otherwise have held.
+        replaced_at = self.clock.now + timedelta(hours=1)
+        index = self.schedule.replace(3, replaced_at)
+        self.clock.advance(timedelta(hours=3))
+        first, second = self.both(signed_fod_id(
+            self.schedule.crypto(index),
+            date=replaced_at + timedelta(hours=1)))
+        self.assertEqual(2, self.transport.count("id/key/"))
+        self.assertEqual(SignatureReason.VERIFIED, first.reason)
+        self.assertEqual(first, second)
 
 
 class KeySelectionTests(unittest.TestCase):
