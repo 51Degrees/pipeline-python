@@ -441,22 +441,37 @@ fod_id = FodId.from_base64(fifty_one_did)
 ```
 
 **2. Verify the signature offline.** The client fetches the published
-signing public keys from the cloud once, caches them for a day, and picks
-the key in force when the identifier was created, being the entry whose
-start is latest on or before the identifier's date (a key stays in force
-until the next one starts, and keys are published up to three months
-ahead). Near a period boundary the neighbouring key is tried as well. No
-earlier key is ever tried. The envelope version must be the one the
-cloud signs and the payload at least the base length for its type, and a
-longer payload carries a creator context and is accepted, its exact
-lengths being for the cloud to judge.
+signing public keys from the cloud, caches them, and picks the key in
+force when the identifier was created, being the entry whose start is
+latest on or before the identifier's date. A key stays in force until its
+end, `ends_at`, or until the next key starts where the cloud sent no end.
+Near a period boundary the neighbouring key is tried as well. No earlier
+key is ever tried.
+
+The keys held answer every date before the newest key's end, or before
+its start where the cloud sent no end, so a server verifies offline for
+the whole period it holds. For a later date the client asks the cloud for
+the keys from the newest start it holds, at most once a minute, and
+merges the answer into the keys it holds without dropping any. A date no
+key covers answers `SignatureReason.NO_KEY`. A key may be replaced before
+its end if it is compromised, and the client picks up the replacement on
+the first signature failure, when it asks for the keys from the one in
+force at the identifier's date before reporting the failure, within the
+same once a minute limit, or at the daily refresh of the whole list. The
+first fetch and the daily refresh are never held back by that limit.
+
+The envelope version must be the one the cloud signs and the payload at
+least the base length for its type, and a longer payload carries a
+creator context and is accepted, its exact lengths being for the cloud to
+judge.
 
 ```python
 valid = await client.verify_signature(fod_id)            # bool
 check = await client.verify_signature_detailed(fod_id)   # SignatureCheck
 # check.valid is False and check.reason is SignatureReason.NO_KEY when
 # no published key covers the identifier's date
-keys = await client.public_keys()    # [PublicKeyEntry(starts_at, public_key)]
+keys = await client.public_keys()    # [PublicKeyEntry(starts_at,
+                                     #   public_key, ends_at)]
 key = await client.public_key_for(fod_id)  # the entry in force, or None
 ```
 
@@ -493,9 +508,10 @@ redeemed.signature                # SignatureResult: VERIFIED, INVALID
                                   #   or UNKNOWN
 redeemed.factors                  # only where there is something to
                                   #   diagnose, name to FactorResult
-                                  #   (VERIFIED, MISMATCH or
-                                  #   MISCONFIGURED) or None where nothing
-                                  #   was compared, for transport, device,
+                                  #   (VERIFIED, MISMATCH, MISCONFIGURED
+                                  #   or NOT_RECORDED) or None where
+                                  #   nothing was compared, for
+                                  #   transport, device,
                                   #   browserip, connectionip, asn,
                                   #   platformname, platformversion,
                                   #   browsername and browserversion
@@ -508,6 +524,12 @@ redeemed.raw                      # the body as received
 redeemed.to_dict()                # the cloud's own response shape, for
                                   #   relaying to a page
 ```
+
+Neither `MISCONFIGURED` nor `NOT_RECORDED` is a mismatch, and neither
+must ever be read as one, but they say different things, because
+`MISCONFIGURED` means the checking service could not determine the factor
+whilst `NOT_RECORDED` means the creating service recorded no value for
+it, so the identifier says nothing about it.
 
 A context string this package does not know maps to `UNREADABLE`, so an
 unrecognised outcome is never mistaken for a good one, and `context_raw`
