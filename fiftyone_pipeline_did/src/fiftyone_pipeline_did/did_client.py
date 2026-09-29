@@ -173,7 +173,8 @@ class SignatureResult(str, Enum):
 class FactorResult(str, Enum):
     """The outcome of one factor in a mismatch or a partly misconfigured
     result. The cloud reports ``null`` for a factor that was not compared,
-    which is passed through as ``None``."""
+    which is passed through as ``None``, and a word this package does not
+    list is read the same way."""
 
     VERIFIED = "verified"
     MISMATCH = "mismatch"
@@ -182,6 +183,12 @@ class FactorResult(str, Enum):
     #: request. This is NOT a mismatch and must not be read as one, since
     #: the identifier says nothing about it either way.
     MISCONFIGURED = "misconfigured"
+    #: The service that created the identifier recorded no value for this
+    #: factor, so the identifier says nothing about it and there was
+    #: nothing to compare. This is neither a mismatch nor
+    #: :attr:`MISCONFIGURED`, which says the checking service could not
+    #: determine the factor.
+    NOT_RECORDED = "notrecorded"
 
 
 class SignatureReason(str, Enum):
@@ -412,11 +419,12 @@ def _factor_of(value: Any) -> FactorValue:
         return FactorResult.VERIFIED
     if value == "mismatch":
         return FactorResult.MISMATCH
-    # Read on its own rather than left to fall through, because it says the
-    # checking service could not determine the factor and must never be
-    # taken for a mismatch.
+    # Each read on its own rather than left to fall through, because
+    # neither is a mismatch and neither must ever be taken for one.
     if value == "misconfigured":
         return FactorResult.MISCONFIGURED
+    if value == "notrecorded":
+        return FactorResult.NOT_RECORDED
     return None
 
 

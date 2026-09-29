@@ -508,9 +508,10 @@ redeemed.signature                # SignatureResult: VERIFIED, INVALID
                                   #   or UNKNOWN
 redeemed.factors                  # only where there is something to
                                   #   diagnose, name to FactorResult
-                                  #   (VERIFIED, MISMATCH or
-                                  #   MISCONFIGURED) or None where nothing
-                                  #   was compared, for transport, device,
+                                  #   (VERIFIED, MISMATCH, MISCONFIGURED
+                                  #   or NOT_RECORDED) or None where
+                                  #   nothing was compared, for
+                                  #   transport, device,
                                   #   browserip, connectionip, asn,
                                   #   platformname, platformversion,
                                   #   browsername and browserversion
@@ -523,6 +524,12 @@ redeemed.raw                      # the body as received
 redeemed.to_dict()                # the cloud's own response shape, for
                                   #   relaying to a page
 ```
+
+Neither `MISCONFIGURED` nor `NOT_RECORDED` is a mismatch, and neither
+must ever be read as one, but they say different things, because
+`MISCONFIGURED` means the checking service could not determine the factor
+whilst `NOT_RECORDED` means the creating service recorded no value for
+it, so the identifier says nothing about it.
 
 A context string this package does not know maps to `UNREADABLE`, so an
 unrecognised outcome is never mistaken for a good one, and `context_raw`

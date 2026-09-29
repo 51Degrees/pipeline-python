@@ -1056,6 +1056,28 @@ REDEEMED_WITH_THE_OLD_BROWSER_FACTOR = json.dumps({
     "secondsSinceVerified": 2,
 })
 
+#: A redemption where the creating service recorded no value for two
+#: factors, alongside a mismatch, a misconfigured factor and verified ones.
+REDEEMED_WITH_NOT_RECORDED_FACTORS = json.dumps({
+    "signature": "verified",
+    "context": "mismatch",
+    "factors": {"transport": "notrecorded", "device": "verified",
+                "browserip": "mismatch", "connectionip": "verified",
+                "asn": "misconfigured", "platformname": "verified",
+                "platformversion": "notrecorded",
+                "browsername": "verified",
+                "browserversion": "verified"},
+    "verifiedAt": "2026-09-26T09:15:32Z",
+    "secondsSinceVerified": 2,
+})
+
+#: A redemption carrying a factor value this package does not list.
+REDEEMED_WITH_AN_UNKNOWN_FACTOR_VALUE = json.dumps({
+    "signature": "verified",
+    "context": "mismatch",
+    "factors": {"transport": "somethingnewer"},
+})
+
 REDEEMED_WITHOUT_FACTORS = json.dumps({
     "signature": "verified",
     "context": "verified",
@@ -1147,6 +1169,33 @@ class RedeemTests(unittest.TestCase):
                       result.factors["browserversion"])
         self.assertIsNot(FactorResult.MISMATCH,
                          result.factors["browserversion"])
+
+    def test_a_factor_the_creator_did_not_record_is_its_own_outcome(self):
+        result = self.redeem(200, REDEEMED_WITH_NOT_RECORDED_FACTORS)
+        self.assertIs(FactorResult.NOT_RECORDED,
+                      result.factors["transport"])
+        self.assertIs(FactorResult.NOT_RECORDED,
+                      result.factors["platformversion"])
+        self.assertIs(FactorResult.MISMATCH, result.factors["browserip"])
+        self.assertIs(FactorResult.MISCONFIGURED, result.factors["asn"])
+        self.assertIs(FactorResult.VERIFIED, result.factors["device"])
+        # A factor the creating service recorded no value for is neither a
+        # mismatch nor the checking service's own failure.
+        self.assertIsNot(FactorResult.MISMATCH, result.factors["transport"])
+        self.assertIsNot(FactorResult.MISCONFIGURED,
+                         result.factors["transport"])
+        self.assertEqual(
+            json.loads(REDEEMED_WITH_NOT_RECORDED_FACTORS)["factors"],
+            result.to_dict()["factors"])
+
+    def test_a_factor_value_this_package_does_not_list_reads_as_none(self):
+        result = self.redeem(200, REDEEMED_WITH_AN_UNKNOWN_FACTOR_VALUE)
+        self.assertIsNone(result.factors["transport"])
+
+    def test_the_factor_outcomes_are_the_words_the_cloud_writes(self):
+        self.assertEqual(
+            ["verified", "mismatch", "misconfigured", "notrecorded"],
+            [member.value for member in FactorResult])
 
     def test_the_old_browser_factor_populates_none_of_the_four(self):
         result = self.redeem(200, REDEEMED_WITH_THE_OLD_BROWSER_FACTOR)
