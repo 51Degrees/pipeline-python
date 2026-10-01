@@ -20,13 +20,6 @@
 # such notice(s) shall fulfill the requirements of that article.
 # *********************************************************************
 
-# The values the JavaScript builder hands to the client script template.
-# Every language's builder renders the same template and is expected to
-# produce the same script, with the .NET builder as the reference, so these
-# tests pin the values the .NET builder passes. They read the values handed
-# to the template rather than the rendered text, so they do not depend on
-# how a given template revision names its variables.
-
 import json
 import unittest
 from unittest import mock
