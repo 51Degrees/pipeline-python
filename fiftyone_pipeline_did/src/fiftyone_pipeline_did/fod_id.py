@@ -530,7 +530,7 @@ class FodId:
         forgery. :meth:`signature_status` gives the same answer as a named
         status without raising.
         """
-        return self._owid.verify_with_public_key(public_pem, [])
+        return self._owid.verify_with_public_key(public_pem)
 
     def signature_status(self, public_pem: str) -> SignatureStatus:
         """Says whether the signature is genuine, or why that could not be
@@ -543,7 +543,7 @@ class FodId:
         :attr:`~fiftyone_pipeline_did.SignatureStatus.KEY_UNAVAILABLE` when
         no key was given, and must never be read as a forgery.
         """
-        return self._owid.signature_status(public_pem, [])
+        return self._owid.signature_status(public_pem)
 
 
 def _read_base64(value) -> ParseResult:
