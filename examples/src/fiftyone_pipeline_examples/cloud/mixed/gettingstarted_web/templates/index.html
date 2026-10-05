@@ -47,7 +47,7 @@
     </noscript>
 
     <div id="content">
-        <form method="get" action="{{ url_for('index') }}" class="c-eg-form">
+        <form method="get" class="c-eg-form">
             <div class="c-eg-form__row">
                 <label class="b-label" for="client-ip">IP Address Lookup:</label>
                 <input class="b-input" type="text" id="client-ip" name="client-ip" value="{{ lookup_ip or '' }}"
@@ -92,12 +92,14 @@
                         <tr class="c-eg-table__row{% if loop.index0 is even %} c-eg-table__row--alt{% endif %}">
                             <td class="c-eg-table__cell c-eg-table__cell--key">{{ row.label }}</td>
                             <td class="c-eg-table__cell">
-                                {% if row.entries %}
+                                {% if row.entries is not none %}
                                 <ul>
                                     {% for value, percentage in row.entries %}
                                     <li>{{ value }} ({{ percentage }}%)</li>
                                     {% endfor %}
                                 </ul>
+                                {% elif row.not_found %}
+                                <p>(Property Not Found)</p>
                                 {% elif row.options %}
                                 {# Every country, with the code as each option's value and the
                                    translated name as the text a visitor sees. #}
@@ -106,6 +108,8 @@
                                     <option value="{{ code }}">{{ name }}</option>
                                     {% endfor %}
                                 </select>
+                                {% elif row.options is not none %}
+                                <span>(no country list available)</span>
                                 {% else %}
                                 {{ row.text }}
                                 {% endif %}
@@ -160,7 +164,7 @@
     results. The shared examples.js helper subscribes to that event and appends a table of the
     client-side results into #content.
 #}
-<script src="/51Degrees.core.js"></script>
+<script async src="51Degrees.core.js" type="text/javascript"></script>
 <script src="{{ url_for('static', filename='js/examples.min.js') }}"></script>
 <script>
     window.onload = function () {

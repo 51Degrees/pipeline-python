@@ -174,13 +174,14 @@ class ExampleUtils:
         return f"{ExampleUtils.UNKNOWN} ({reason})"
 
     @staticmethod
-    def get_value_or_unknown(element_data, property_name):
+    def get_value_or_unknown(element_data, property_name, decimals=None):
         """!
         A property value as text, or "Unknown" when there is none, for use
-        inside a sentence where the reason would get in the way.
+        where the reason would get in the way, such as a table cell or a
+        sentence. decimals sets the number of places a number is shown to.
         """
 
         value = ExampleUtils.get_value(element_data, property_name)
         if value is None or not value.has_value():
             return ExampleUtils.UNKNOWN
-        return ExampleUtils.format_value(value.value())
+        return ExampleUtils.format_value(value.value(), decimals)

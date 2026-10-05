@@ -53,6 +53,7 @@ PROPERTIES = {
         ("Latitude", "Single"),
         ("Areas", "WktString"),
         ("CountryCodesGeographical", "WeightedString"),
+        ("CountryCodesPopulation", "WeightedString"),
     ],
     "countrynamestranslated": [
         ("CountryCodesGeographicalAll", "Array"),
@@ -77,6 +78,8 @@ RESULTS = {
             {"rawweighting": 49151, "value": "GB"},
             {"rawweighting": 16384, "value": "IE"},
         ],
+        "countrycodespopulation": None,
+        "countrycodespopulationnullreason": "The population is not known.",
     },
     "countrynamestranslated": {
         "countrycodesgeographicalall": ["GB", "IE"],
@@ -177,15 +180,31 @@ def test_page_shows_values_in_the_forms_the_cloud_sends(cloud):
         ("GB", "United Kingdom"), ("IE", "Ireland")]
 
 
-def test_page_says_why_a_value_is_missing(cloud):
+def test_page_shows_unknown_for_a_missing_value(cloud):
     cloud(EVERY_SECTION)
     html = page_for(resource_key="a-resource-key")
 
-    assert cell_after(html, "Hardware Vendor:") == \
-        "Unknown (The hardware vendor is not known.)"
-    assert cell_after(html, "Platform Name:") == (
-        "Unknown (the property 'platformname' is not in the results, so "
-        "the key in use does not include it)")
+    # A property with no value, and one the key does not carry.
+    assert cell_after(html, "Hardware Vendor:") == "Unknown"
+    assert cell_after(html, "Platform Name:") == "Unknown"
+    # A weighted property with no value shows the reason the cloud gave.
+    assert cell_after(html, "Country Codes Population:") == \
+        "The population is not known."
+
+
+def test_page_refers_to_the_script_and_shared_files_from_the_root(cloud):
+    cloud(EVERY_SECTION)
+    pipeline = create_pipeline(
+        Logger(min_level="info"), resource_key="a-resource-key")
+    client = create_app(pipeline).test_client()
+    html = client.get("/").get_data(as_text=True)
+
+    assert '<link rel="stylesheet" href="/css/examples-main.min.css">' in html
+    assert ('<script async src="51Degrees.core.js" '
+            'type="text/javascript"></script>') in html
+    assert '<script src="/js/examples.min.js"></script>' in html
+    for path in ("/css/examples-main.min.css", "/js/examples.min.js"):
+        assert client.get(path).status_code == 200, path
 
 
 def test_page_works_without_the_translated_country_names(cloud):
@@ -204,9 +223,10 @@ def test_page_works_with_only_one_of_the_products(cloud):
     html = page_for(resource_key="a-resource-key")
 
     assert cell_after(html, "Device Type:") == "Desktop"
-    assert cell_after(html, "Registered Country:") == (
-        "Unknown (the property 'registeredcountry' is not in the results, "
-        "so the key in use does not include it)")
+    assert cell_after(html, "Registered Country:") == "Unknown"
+    # A weighted property the results do not include at all.
+    assert cell_after(html, "Country Codes Geographical:") == \
+        "(Property Not Found)"
 
 
 def test_key_carrying_neither_product_is_refused(cloud):
@@ -270,7 +290,7 @@ def test_licence_key_gets_an_engine_only_for_what_it_asks_for(cloud):
     html = page_for(license_key="a-licence-key")
 
     assert cell_after(html, "Device Type:") == "Desktop"
-    assert cell_after(html, "Registered Country:").startswith("Unknown (")
+    assert cell_after(html, "Registered Country:") == "Unknown"
     assert country_options(html) == []
 
 

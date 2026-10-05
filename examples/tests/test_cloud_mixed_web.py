@@ -76,7 +76,7 @@ def test_page_shows_both_sets_of_results(page):
     assert "Device detection results" in html
     assert "IP intelligence results" in html
     assert f"Showing location data for: {LOOKUP_IP}" in html
-    assert "is not in the results" not in html, (
+    assert "(Property Not Found)" not in html, (
         "The key does not carry every property the page shows.")
 
 

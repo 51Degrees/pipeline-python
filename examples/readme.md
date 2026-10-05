@@ -44,10 +44,10 @@ account, so it stays on the server. The web page and its script only ever
 talk to the example, never to the cloud service. When both kinds of key are
 set, the licence key is the one used.
 
-A property the key does not carry is shown as unknown, with the reason. A
-key carrying only one of the two products still runs, and the web example
-shows the list of countries only when the key carries the translated country
-names.
+A property the key does not carry is shown as unknown. The console example
+adds the reason, and the web example shows "Unknown" alone. A key carrying
+only one of the two products still runs, and the web example shows the list
+of countries only when the key carries the translated country names.
 
 The examples use the public cloud service at `https://cloud.51degrees.com`.
 Set `cloud_endpoint`, or `FOD_CLOUD_API_URL`, to the address of another

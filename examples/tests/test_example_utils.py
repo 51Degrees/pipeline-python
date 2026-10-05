@@ -97,6 +97,7 @@ def test_value_or_unknown():
     results = Results({
         "devicetype": AspectPropertyValue(None, "Desktop"),
         "browsername": AspectPropertyValue("No value."),
+        "latitude": AspectPropertyValue(None, 51.4150001),
     })
     assert ExampleUtils.get_value_or_unknown(results, "devicetype") == \
         "Desktop"
@@ -104,3 +105,6 @@ def test_value_or_unknown():
         "Unknown"
     assert ExampleUtils.get_value_or_unknown(results, "platformname") == \
         "Unknown"
+    assert ExampleUtils.get_value_or_unknown(None, "devicetype") == "Unknown"
+    assert ExampleUtils.get_value_or_unknown(results, "latitude", 4) == \
+        "51.4150"

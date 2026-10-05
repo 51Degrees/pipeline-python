@@ -220,7 +220,10 @@ def create_app(pipeline):
     client-side script and the client-side callback.
     """
 
-    app = Flask(__name__)
+    # Serve the files in the static folder from the root, so the stylesheet
+    # is at /css and the script at /js, as in the examples for the other
+    # languages.
+    app = Flask(__name__, static_url_path="")
 
     # Take the visitor's address from the X-Forwarded-For header a reverse
     # proxy adds (for example ngrok, a load balancer or nginx), so IP
@@ -316,24 +319,23 @@ def page_model(flowdata):
             f"{ExampleUtils.get_value_or_unknown(device, 'platformname')} "
             f"({ExampleUtils.get_value_or_unknown(device, 'devicetype')})")
 
+    # A cell shows "Unknown" for a property with no value, whatever the
+    # reason, which keeps the tables easy to read. The console example
+    # prints the reason.
     ip_rows = [
-        {"label": label,
-         "text": ExampleUtils.get_human_readable(ip, name, decimals)}
+        ip_row(label,
+               text=ExampleUtils.get_value_or_unknown(ip, name, decimals))
         for label, name, decimals in IP_PROPERTIES]
     ip_rows += [
-        {"label": label,
-         "entries": weighted_entries(ip, name),
-         "text": ExampleUtils.get_human_readable(ip, name)}
+        weighted_row(label, ip, name)
         for label, name in WEIGHTED_IP_PROPERTIES]
-    ip_rows.append({
-        "label": "Countries (geographical):",
-        "options": country_options(countries),
-        "text": "(no country list available)"})
+    ip_rows.append(ip_row(
+        "Countries (geographical):", options=country_options(countries)))
 
     return {
         "device_message": device_message,
         "device_rows": [
-            (label, ExampleUtils.get_human_readable(device, name))
+            (label, ExampleUtils.get_value_or_unknown(device, name))
             for label, name in DEVICE_PROPERTIES],
         "ip_message": ip_message,
         "lookup_ip": lookup_ip,
@@ -342,39 +344,59 @@ def page_model(flowdata):
     }
 
 
-def weighted_entries(element_data, property_name):
+def ip_row(label, text=None, entries=None, options=None, not_found=False):
 
     """!
-    The entries of a weighted property as (value, percentage) pairs, or None
-    when the property has no value to show.
+    One row of the IP intelligence table. The template shows whichever of
+    text, the entries of a weighted property and the country options the
+    row holds. It says so when the results do not include a weighted
+    property, and when the list of country options is empty.
+    """
+
+    return {
+        "label": label,
+        "text": text,
+        "entries": entries,
+        "options": options,
+        "not_found": not_found,
+    }
+
+
+def weighted_row(label, element_data, property_name):
+
+    """!
+    The row for a weighted property, holding its entries as (value,
+    percentage) pairs when it has a value, and the reason the cloud service
+    gave when it has none.
     """
 
     value = ExampleUtils.get_value(element_data, property_name)
-    if value is None or not value.has_value():
-        return None
-    entries = [
+    if value is None:
+        return ip_row(label, not_found=True)
+    if not value.has_value():
+        return ip_row(label, text=value.no_value_message() or "(no value)")
+    return ip_row(label, entries=[
         (item.get("value"), ExampleUtils.as_percentage(item["weighting"]))
         for item in value.value()
-        if isinstance(item, dict) and "weighting" in item]
-    return entries or None
+        if isinstance(item, dict) and "weighting" in item])
 
 
 def country_options(countries):
 
     """!
     Every country as a (code, translated name) pair, in the order of the
-    country code list, or None when the cloud service returned no list. The
-    code and name lists are aligned by position.
+    country code list, or an empty list when the cloud service returned no
+    list. The code and name lists are aligned by position.
     """
 
     codes = ExampleUtils.get_value(countries, COUNTRY_CODES_PROPERTY)
     names = ExampleUtils.get_value(countries, COUNTRY_NAMES_PROPERTY)
     if (codes is None or names is None or
             not codes.has_value() or not names.has_value()):
-        return None
+        return []
     codes, names = codes.value(), names.value()
     if not codes or len(codes) != len(names):
-        return None
+        return []
     return list(zip(codes, names))
 
 
