@@ -1,0 +1,171 @@
+{#
+    *********************************************************************
+    * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+    * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+    * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+    *
+    * This Original Work is licensed under the European Union Public Licence
+    * (EUPL) v.1.2 and is subject to its terms as set out below.
+    *
+    * If a copy of the EUPL was not distributed with this file, You can obtain
+    * one at https://opensource.org/licenses/EUPL-1.2.
+    *
+    * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+    * amended by the European Commission) shall be deemed incompatible for
+    * the purposes of the Work and the provisions of the compatibility
+    * clause in Article 5 of the EUPL shall not apply.
+    *
+    * If using the Work as, or as part of, a network application, by
+    * including the attribution notice(s) required under Article 5 of the EUPL
+    * in the end user terms of the application under an appropriate heading,
+    * such notice(s) shall fulfill the requirements of that article.
+    * ********************************************************************* #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Detection + IP Intelligence Example</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/examples-main.min.css') }}">
+</head>
+<body>
+<div class="c-eg-page">
+    <h2 class="c-eg-page__title">Combined device detection and IP intelligence example</h2>
+    <p class="c-eg-page__lead">
+        This example demonstrates the use of the Pipeline API to perform both device detection and
+        IP intelligence lookups within a single Flask web project. It highlights device detection
+        using User-Agent and Client Hints, IP-based geolocation and network information, country
+        names translated by the cloud service, and client-side evidence collection for enhanced
+        detection, with one request to the cloud service returning every result.
+    </p>
+
+    <noscript>
+        <div class="c-eg-alert">
+            WARNING: JavaScript is disabled in your browser. This means that client-side evidence
+            collection will not work and some device properties may not be accurately detected.
+        </div>
+    </noscript>
+
+    <div id="content">
+        <form method="get" action="{{ url_for('index') }}" class="c-eg-form">
+            <div class="c-eg-form__row">
+                <label class="b-label" for="client-ip">IP Address Lookup:</label>
+                <input class="b-input" type="text" id="client-ip" name="client-ip" value="{{ lookup_ip or '' }}"
+                       placeholder="e.g., 8.8.8.8">
+                <button class="b-btn" type="submit">Look Up</button>
+            </div>
+        </form>
+
+        <div class="c-eg-columns">
+            <div>
+                <h3 class="c-eg-page__heading">Device detection results</h3>
+                {% if device_message %}
+                <p class="c-eg-page__lead">{{ device_message }}</p>
+                {% endif %}
+                <table class="c-eg-table">
+                    <thead class="c-eg-table__head">
+                        <tr class="c-eg-table__row">
+                            <th class="c-eg-table__cell">Property</th>
+                            <th class="c-eg-table__cell">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for label, value in device_rows %}
+                        <tr class="c-eg-table__row{% if loop.index0 is even %} c-eg-table__row--alt{% endif %}"><td class="c-eg-table__cell c-eg-table__cell--key">{{ label }}</td><td class="c-eg-table__cell">{{ value }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div>
+                <h3 class="c-eg-page__heading">IP intelligence results</h3>
+                <p class="c-eg-page__lead">{{ ip_message }}</p>
+                <table class="c-eg-table">
+                    <thead class="c-eg-table__head">
+                        <tr class="c-eg-table__row">
+                            <th class="c-eg-table__cell">Property</th>
+                            <th class="c-eg-table__cell">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in ip_rows %}
+                        <tr class="c-eg-table__row{% if loop.index0 is even %} c-eg-table__row--alt{% endif %}">
+                            <td class="c-eg-table__cell c-eg-table__cell--key">{{ row.label }}</td>
+                            <td class="c-eg-table__cell">
+                                {% if row.entries %}
+                                <ul>
+                                    {% for value, percentage in row.entries %}
+                                    <li>{{ value }} ({{ percentage }}%)</li>
+                                    {% endfor %}
+                                </ul>
+                                {% elif row.options %}
+                                {# Every country, with the code as each option's value and the
+                                   translated name as the text a visitor sees. #}
+                                <select>
+                                    {% for code, name in row.options %}
+                                    <option value="{{ code }}">{{ name }}</option>
+                                    {% endfor %}
+                                </select>
+                                {% else %}
+                                {{ row.text }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <details class="c-eg-details">
+            <summary>Evidence used</summary>
+            <p class="c-eg-page__lead">Evidence collected from the current request</p>
+            <table class="c-eg-table">
+                <thead class="c-eg-table__head">
+                    <tr class="c-eg-table__row">
+                        <th class="c-eg-table__cell">Key</th>
+                        <th class="c-eg-table__cell">Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for key, value in evidence_rows %}
+                    <tr class="c-eg-table__row{% if loop.index0 is even %} c-eg-table__row--alt{% endif %}"><td class="c-eg-table__cell c-eg-table__cell--key">{{ key }}</td><td class="c-eg-table__cell">{{ value }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+    </div>
+
+    <div class="c-eg-message">
+        <p class="c-eg-message__text">Want to try on-premise? <a href="https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-templates-index.html&utm_term=try-on-premise">Contact us</a> to discuss requirements.</p>
+        <a class="b-btn c-eg-message__cta" href="https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-templates-index.html&utm_term=try-on-premise">Contact us</a>
+    </div>
+
+    <h3 class="c-eg-page__heading">Find out more</h3>
+    <ul>
+        <li><a href="https://51degrees.com/device-detection?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-templates-index.html&utm_term=find-out-more-device-detection">Device detection</a></li>
+        <li><a href="https://51degrees.com/ip-intelligence?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-templates-index.html&utm_term=find-out-more-ip-intelligence">IP intelligence</a></li>
+        <li><a href="https://51degrees.com/documentation/_services__cloud__resource_keys.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-templates-index.html&utm_term=find-out-more-resource-keys">Resource keys</a></li>
+        <li><a href="https://51degrees.com/pricing?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-templates-index.html&utm_term=find-out-more-pricing">Pricing</a></li>
+        <li>Pipeline API for Python: <a href="https://github.com/51Degrees/pipeline-python">https://github.com/51Degrees/pipeline-python</a></li>
+        <li>Device detection for Python: <a href="https://github.com/51Degrees/device-detection-python">https://github.com/51Degrees/device-detection-python</a></li>
+        <li>IP intelligence engine: <a href="https://github.com/51Degrees/ip-intelligence-cxx">https://github.com/51Degrees/ip-intelligence-cxx</a></li>
+    </ul>
+</div>
+
+{#
+    51Degrees.core.js is written by the JavaScriptBuilder element and served by the matching
+    route in app.py. It carries the results of the request as JSON, gathers evidence in the
+    browser, posts it to the /json route and raises the 'complete' event with the refined
+    results. The shared examples.js helper subscribes to that event and appends a table of the
+    client-side results into #content.
+#}
+<script src="/51Degrees.core.js"></script>
+<script src="{{ url_for('static', filename='js/examples.min.js') }}"></script>
+<script>
+    window.onload = function () {
+        fodExamples.bindDeviceCallback({ targetId: "content" });
+    };
+</script>
+</body>
+</html>

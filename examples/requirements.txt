@@ -1,0 +1,8 @@
+# Installs the Pipeline packages from this checkout and then the examples,
+# so the examples run against the code beside them rather than a release.
+# Run it from this folder, because pip reads these paths relative to the
+# current directory.
+-e ../fiftyone_pipeline_core
+-e ../fiftyone_pipeline_engines
+-e ../fiftyone_pipeline_cloudrequestengine
+-e .[test]
