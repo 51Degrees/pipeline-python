@@ -56,12 +56,12 @@ If you want examples that demonstrate how to use 51Degrees products such as devi
 | fiftyone_pipeline_code/examples/client_side_evidence_custom_flow_element.py | Demonstrates how to create a custom flow element, which can then be included in a pipeline.          |
 | fiftyone_pipeline_engines_fiftyone/examples/usagesharing                    | Shows how to share usage with 51Degrees. This helps us to keep our products up to date and accurate. |
 
-The [examples](examples/readme.md) folder holds examples that call the 51Degrees cloud service with a resource key or a licence key, and its readme says how to run them.
+The [fiftyone_pipeline_cloudrequestengine/examples](fiftyone_pipeline_cloudrequestengine/examples/readme.md) folder holds examples that call the 51Degrees cloud service with a resource key or a licence key, and its readme says how to run them.
 
-| Example                                                                       | Description                                                                                                                     |
-|-------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
-| examples/src/fiftyone_pipeline_examples/cloud/mixed/gettingstarted_console.py | Device detection and IP intelligence for several User-Agent and IP address pairs, from one pipeline.                            |
-| examples/src/fiftyone_pipeline_examples/cloud/mixed/gettingstarted_web        | A Flask web application showing device detection and IP intelligence for its visitor, or for an IP address typed into the page. |
+| Example                                                                                                            | Description                                                                                                                     |
+|--------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| fiftyone_pipeline_cloudrequestengine/examples/src/fiftyone_pipeline_examples/cloud/mixed/gettingstarted_console.py | Device detection and IP intelligence for several User-Agent and IP address pairs, from one pipeline.                            |
+| fiftyone_pipeline_cloudrequestengine/examples/src/fiftyone_pipeline_examples/cloud/mixed/gettingstarted_web        | A Flask web application showing device detection and IP intelligence for its visitor, or for an IP address typed into the page. |
 
 To run the custom flow element example, you will need to use flask:
 ### Linux

@@ -1,6 +1,7 @@
 name: Examples
 
-# Runs the tests of the examples in the examples folder on demand.
+# Runs the tests of the examples in fiftyone_pipeline_cloudrequestengine/examples
+# on demand.
 #
 # The examples are tested by common-ci on every Python version and operating
 # system in ci/options.json, in the pull request and nightly workflows, because
@@ -24,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: examples
+        working-directory: fiftyone_pipeline_cloudrequestengine/examples
     steps:
       - uses: actions/checkout@v4
         with:
