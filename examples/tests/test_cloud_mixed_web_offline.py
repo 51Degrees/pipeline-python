@@ -113,10 +113,13 @@ class StubCloud:
     def __init__(self, sections):
         self.sections = sections
         self.requests = []
+        # The Origin header of each request, kept apart from the body.
+        self.origins = []
 
     def request(self, method, url, data=None, headers=None):
-        headers = dict(headers or {})
-        self.requests.append((url, headers))
+        data = dict(data or {})
+        self.requests.append((url, data))
+        self.origins.append(dict(headers or {}).get("Origin"))
 
         if "accessibleproperties" in url.lower():
             return StubResponse({"Products": {
@@ -130,7 +133,7 @@ class StubCloud:
 
         # A request that names the properties it wants gets those alone,
         # and no section it named nothing from.
-        named = headers.get("X-51D-Values")
+        named = data.get("values")
         answer = {}
         for section in self.sections:
             values = {
@@ -239,10 +242,11 @@ def test_resource_key_goes_in_the_address(cloud):
     stub = cloud(EVERY_SECTION)
     page_for(resource_key="a-resource-key")
 
-    url, headers = stub.requests[-1]
+    url, data = stub.requests[-1]
     assert url.endswith("/a-resource-key.json?")
-    assert "X-51D-License-Key" not in headers
-    assert "X-51D-Values" not in headers
+    assert data["resource"] == "a-resource-key"
+    assert "license" not in data
+    assert "values" not in data
 
 
 def test_origin_can_be_set_for_a_key_limited_to_particular_domains(cloud):
@@ -250,8 +254,7 @@ def test_origin_can_be_set_for_a_key_limited_to_particular_domains(cloud):
     page_for(resource_key="a-resource-key", cloud_request_origin="example.org")
 
     assert all(
-        headers.get("Origin") == "example.org"
-        for _, headers in stub.requests)
+        origin == "example.org" for origin in stub.origins)
 
 
 def test_licence_key_names_the_properties_it_wants(cloud):
@@ -263,15 +266,17 @@ def test_licence_key_names_the_properties_it_wants(cloud):
     assert country_options(html) == [
         ("GB", "United Kingdom"), ("IE", "Ireland")]
 
-    # The licence key travels in a header of every request, and the request
-    # for results goes to the address that takes no key.
-    assert all(
-        headers.get("X-51D-License-Key") == "a-licence-key"
-        for _, headers in stub.requests)
-    url, headers = stub.requests[-1]
+    # The licence key travels in the body of every request that needs a
+    # credential, never in an address. The request for the accepted
+    # evidence keys needs none and carries no body. The request for
+    # results goes to the address that takes no resource key.
+    with_body = [data for _, data in stub.requests if data]
+    assert len(with_body) >= 2
+    assert all(data.get("license") == "a-licence-key" for data in with_body)
+    assert all("a-licence-key" not in url for url, _ in stub.requests)
+    url, data = stub.requests[-1]
     assert url.endswith("/json")
-    assert "a-licence-key" not in url
-    named = headers["X-51D-Values"].split(",")
+    named = data["values"].split(",")
     # The properties the page shows.
     for value in ("device.devicetype", "device.deviceid",
                   "ip.registeredcountry", "ip.countrycodesgeographical",

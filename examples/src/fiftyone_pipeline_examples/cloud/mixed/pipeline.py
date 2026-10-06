@@ -29,8 +29,7 @@ from fiftyone_pipeline_cloudrequestengine.cloudrequestengine import \
 from fiftyone_pipeline_core.pipelinebuilder import PipelineBuilder
 
 from fiftyone_pipeline_examples.cloud.engines import (
-    CountriesTranslationCloud, DeviceDetectionCloud, IpIntelligenceCloud,
-    LicenseKeyCloudRequestEngine)
+    CountriesTranslationCloud, DeviceDetectionCloud, IpIntelligenceCloud)
 
 # The origin sent with each request to the cloud service when none is given.
 CLOUD_REQUEST_ORIGIN = "51Degrees.example.com"
@@ -74,12 +73,16 @@ def build_pipeline(logger, values, resource_key=None, license_key=None,
     if cloud_endpoint:
         cloud_settings["cloud_endpoint"] = cloud_endpoint
 
+    # A licence key names no properties of its own, so the engine is told
+    # which ones to ask for. A resource key answers with the list it was
+    # created with, and the engine refuses a list beside one, because the
+    # cloud service would ignore it.
     if license_key:
-        request_engine = LicenseKeyCloudRequestEngine(
-            license_key, values, cloud_settings)
+        cloud_settings["license_key"] = license_key
+        cloud_settings["requested_properties"] = values
     else:
         cloud_settings["resource_key"] = resource_key
-        request_engine = CloudRequestEngine(cloud_settings)
+    request_engine = CloudRequestEngine(cloud_settings)
 
     # The cloud request engine asks the cloud service which properties the
     # key carries, by section.
@@ -89,9 +92,11 @@ def build_pipeline(logger, values, resource_key=None, license_key=None,
         # A resource key made in the configurator carries the properties
         # that gather evidence in the browser and ask it for User-Agent
         # Client Hints. A licence key has to name them, so ask for every
-        # one the licence entitles in the sections the example uses.
-        values = values + client_side_values(carried, values)
-        request_engine.ask_for(values)
+        # one the licence entitles in the sections the example uses. The
+        # engine reads its list on each request, so it can grow here.
+        client_side_names = client_side_values(carried, values)
+        values = values + client_side_names
+        request_engine.add_requested_properties(client_side_names)
 
     wanted = {value.lower() for value in values}
 

@@ -28,7 +28,21 @@ class OnPremiseMissingPropertyService(MissingPropertyService):
 
     def check(self, key, flow_element):
 
-        raise Exception("Property " + key + " not found in data for element " + flow_element.datakey + ". This is because your resource key does not include access to this property. Properties that are included for this key under device are " + ', '.join(list(flow_element.get_properties().keys())) + ". For more details on resource keys, see our explainer: https://51degrees.com/documentation/_info__resource_keys.html?utm_source=code&utm_medium=comment&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-src-fiftyone_pipeline_cloudrequestengine-clouddata.py&utm_term=property-not-found")
+        # The properties listed here are the ones the key carries, which is
+        # not the same as the ones one answer holds: a request made with a
+        # licence key carries only the properties it asked for, so a
+        # property can be listed and still be absent. The message names
+        # both causes, so the reader checks the right one.
+        raise Exception(
+            "Property " + key + " not found in data for element "
+            + flow_element.datakey + ". Either the key in use does not "
+            "include access to this property, or the request was made "
+            "with a licence key and the property was not among the "
+            "requested_properties. Properties the key carries under "
+            + flow_element.datakey + " are "
+            + ", ".join(list(flow_element.get_properties().keys()))
+            + ". For more details on resource keys, see our explainer: "
+            "https://51degrees.com/documentation/_info__resource_keys.html?utm_source=code&utm_medium=comment&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-src-fiftyone_pipeline_cloudrequestengine-clouddata.py&utm_term=property-not-found")
 
 class CloudData(AspectDataDictionary):
 
