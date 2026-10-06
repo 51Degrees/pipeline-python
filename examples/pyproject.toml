@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fiftyone_pipeline_examples"
+version = "0.0.0"
+description = "Examples of the 51Degrees Pipeline API, including device detection and IP intelligence from the 51Degrees cloud service."
+readme = "readme.md"
+requires-python = ">=3.9"
+authors = [{ name = "51Degrees Engineering", email = "engineering@51degrees.com" }]
+dependencies = [
+    "fiftyone_pipeline_core",
+    "fiftyone_pipeline_engines",
+    "fiftyone_pipeline_cloudrequestengine",
+    "flask",
+]
+# The examples run from this repository and are never published, which
+# this classifier makes PyPI enforce.
+classifiers = ["Private :: Do Not Upload"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["templates/*.html", "static/css/*.css", "static/js/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
