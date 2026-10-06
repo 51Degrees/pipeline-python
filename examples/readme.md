@@ -91,6 +91,13 @@ then open <http://localhost:5000>. Set `PORT` to listen on another port.
 The tests that call the cloud service skip themselves when no resource key
 is set.
 
+In CI the examples are run by [ci/run-integration-tests.ps1](../ci/run-integration-tests.ps1)
+through common-ci, on every Python version and operating system in
+[ci/options.json](../ci/options.json), with the resource key the pipeline
+holds. No licence key is passed to the pipeline, so the licence-key tests
+skip themselves there. That uses the [tox.ini](tox.ini) in this folder,
+which can also be run by hand with `python -m tox -e py` from here.
+
 ## Find out more
 
 - [Device detection](https://51degrees.com/device-detection?utm_source=github&utm_medium=readme&utm_campaign=pipeline-python&utm_content=examples-readme.md&utm_term=find-out-more-device-detection)

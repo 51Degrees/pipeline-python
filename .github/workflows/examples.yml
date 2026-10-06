@@ -1,6 +1,11 @@
 name: Examples
 
-# Runs the tests of the examples in the examples folder.
+# Runs the tests of the examples in the examples folder on demand.
+#
+# The examples are tested by common-ci on every Python version and operating
+# system in ci/options.json, in the pull request and nightly workflows, because
+# ci/run-integration-tests.ps1 lists them. This workflow is only for running
+# them alone, on one Linux runner, without waiting for a full pipeline.
 #
 # The tests that call the cloud service read _51DEGREES_RESOURCE_KEY. It is
 # set from the organisation's bespoke resource key, because that key carries
@@ -9,29 +14,9 @@ name: Examples
 #
 # The secret is named rather than passed as toJSON(secrets), for the reason
 # given in cloud-51did.yml.
-#
-# The cloud tests skip themselves when no key is set, and a pull request
-# from a fork has no secrets. The other tests use a stand-in for the cloud
-# service, so such a run still checks the examples.
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'examples/**'
-      - 'fiftyone_pipeline_core/**'
-      - 'fiftyone_pipeline_engines/**'
-      - 'fiftyone_pipeline_cloudrequestengine/**'
-      - '.github/workflows/examples.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'examples/**'
-      - 'fiftyone_pipeline_core/**'
-      - 'fiftyone_pipeline_engines/**'
-      - 'fiftyone_pipeline_cloudrequestengine/**'
-      - '.github/workflows/examples.yml'
 
 jobs:
   examples:
@@ -49,11 +34,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install the examples and the Pipeline packages from this checkout
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+      - name: Install tox
+        run: python -m pip install --upgrade pip tox
       - name: Test the examples
         env:
           _51DEGREES_RESOURCE_KEY: ${{ secrets._51DEGREES_RESOURCE_KEY_BESPOKE }}
-        run: python -m pytest -v -rs
+        run: python -m tox -e py -- -v -rs
