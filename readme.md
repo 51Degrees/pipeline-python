@@ -56,7 +56,7 @@ If you want examples that demonstrate how to use 51Degrees products such as devi
 | fiftyone_pipeline_code/examples/client_side_evidence_custom_flow_element.py | Demonstrates how to create a custom flow element, which can then be included in a pipeline.          |
 | fiftyone_pipeline_engines_fiftyone/examples/usagesharing                    | Shows how to share usage with 51Degrees. This helps us to keep our products up to date and accurate. |
 
-The [examples](examples/readme.md) folder holds examples that call the 51Degrees cloud service with a resource key, and its readme says how to run them.
+The [examples](examples/readme.md) folder holds examples that call the 51Degrees cloud service with a resource key or a licence key, and its readme says how to run them.
 
 | Example                                                                       | Description                                                                                                                     |
 |-------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|

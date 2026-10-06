@@ -32,8 +32,18 @@ from .constants import Constants
 class MockRequestClient(RequestClient):
     def __init__(self, **kwargs):
         self.server_unavailable = kwargs.get("server_unavailable", False)
+        # The JSON text answered to a data request made with a licence key
+        # alone, which goes to the "json" route rather than a resource key
+        # route, so a test can shape the answer it checks against.
+        self.license_json_response = kwargs.get(
+            "license_json_response", Constants.jsonResponse)
+        # Every request made, as (type, url, content) tuples, so a test can
+        # check where each credential travelled.
+        self.requests = []
 
     def request(self, type, url, content, originHeader):
+        self.requests.append((type, url, content))
+
         response = Mock(spec=Response)
         response.status_code = 200
         response.json = lambda: json.loads(response.text)
@@ -67,6 +77,9 @@ class MockRequestClient(RequestClient):
 
         elif "resource_key.json" in url:
             response.text = Constants.jsonResponse
+
+        elif url.endswith("/json"):
+            response.text = self.license_json_response
 
         else:
             response.text = f"this should not have been called with the URL '{url}'"

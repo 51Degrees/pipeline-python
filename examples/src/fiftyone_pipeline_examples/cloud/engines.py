@@ -31,92 +31,16 @@ translated country names together.
 
 Each engine that reads a section needs a cloud request engine earlier in the
 same pipeline, and the key has to carry at least one property from that
-section, or the pipeline cannot be built.
+section, or the pipeline cannot be built. The cloud request engine comes
+from the fiftyone_pipeline_cloudrequestengine package, which takes a
+resource key or a licence key with the list of properties wanted.
 """
 
-import requests
-
 from fiftyone_pipeline_cloudrequestengine.cloudengine import CloudEngine
-from fiftyone_pipeline_cloudrequestengine.cloudrequestengine import \
-    CloudRequestEngine
-from fiftyone_pipeline_cloudrequestengine.requestclient import RequestClient
 from fiftyone_pipeline_core.aspectproperty_value import AspectPropertyValue
-from fiftyone_pipeline_engines.aspectdata_dictionary import \
-    AspectDataDictionary
 
 # The cloud gives each weighted value a raw weighting from 0 to 65535.
 RAW_WEIGHTING_MAX = 65535
-
-
-class LicenseKeyRequestClient(RequestClient):
-    """!
-    Sends a licence key in a header of every request to the cloud service,
-    and the names of the properties wanted with each request for results.
-
-    The requests that ask what the licence entitles carry no names, so the
-    answer covers everything the licence entitles.
-    """
-
-    def __init__(self, license_key, values):
-
-        self.license_key = license_key
-        self.values = list(values)
-
-    def request(self, type, url, content, originHeader):
-
-        headers = {"X-51D-License-Key": self.license_key}
-        if type == "POST":
-            headers["X-51D-Values"] = ",".join(self.values)
-        if originHeader:
-            headers["Origin"] = originHeader
-
-        return requests.request(type, url, data=content, headers=headers)
-
-
-class LicenseKeyCloudRequestEngine(CloudRequestEngine):
-    """!
-    A cloud request engine for a server that holds a licence key and no
-    resource key.
-
-    A resource key carries the list of properties to return. A licence key
-    does not, so each request names the properties wanted as
-    "section.property", for example "device.devicetype", and the cloud
-    service answers with those the licence entitles.
-
-    A licence key identifies an account, so it stays on the server and is
-    never put in a page.
-    """
-
-    def __init__(self, license_key, values, settings=None):
-
-        settings = dict(settings or {})
-        # The base class builds its addresses from a resource key. An empty
-        # one leaves the licence key in the headers to say who is asking.
-        settings["resource_key"] = ""
-        settings["http_client"] = LicenseKeyRequestClient(license_key, values)
-
-        super(LicenseKeyCloudRequestEngine, self).__init__(settings)
-
-    def ask_for(self, values):
-
-        """!
-        Replace the properties each request asks for.
-        """
-
-        self.http_client.values = list(values)
-
-    def process_internal(self, flowdata):
-
-        """!
-        Ask the cloud service for the properties named, at the address that
-        takes no resource key.
-        """
-
-        result = self.make_cloud_request(
-            "POST", self.baseURL + "json", self.get_content(flowdata))
-
-        flowdata.set_element_data(
-            AspectDataDictionary(self, {"cloud": result}))
 
 
 class DeviceDetectionCloud(CloudEngine):
