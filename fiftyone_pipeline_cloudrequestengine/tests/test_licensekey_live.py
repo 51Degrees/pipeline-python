@@ -66,8 +66,11 @@ class LicenseKeyLiveTests(unittest.TestCase):
         pipeline = PipelineBuilder().add(cloud).add(engine).build()
 
         # The accessible properties came back for the licence key alone, so
-        # the cloud engine registered with metadata.
-        self.assertIn("ismobile", engine.properties)
+        # the cloud engine registered with metadata. The metadata is keyed
+        # by the name as the service spells it, "IsMobile", so look it up
+        # through get_properties, which lower-cases the keys as every other
+        # reader of the metadata does.
+        self.assertIn("ismobile", engine.get_properties())
 
         data = pipeline.create_flowdata()
         data.evidence.add("header.user-agent", USER_AGENT)
