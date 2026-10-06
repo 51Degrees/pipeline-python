@@ -10,11 +10,16 @@ This repository contains the components of the Python implementation of the 51De
 The Pipeline is a generic web request intelligence and data processing solution with the ability to add a range of 51Degrees and/or custom plug ins (Engines) 
 
 ## Contents
-This repository contains 3 modules:
+This repository contains the following modules:
 
 - **fiftyone_pipeline_core** - Defines the essential components of the Pipeline API such as 'flow elements', 'flow data' and 'evidence'
 - **fiftyone_pipeline_engines** - Functionality for a specialized type of flow element called an engine.
+- **fiftyone_pipeline_engines_fiftyone** - A ShareUsage engine that sends usage data to 51Degrees in zipped batches.
 - **fiftyone_pipeline_cloudrequestengine** - An engine used to make requests to the 51Degrees cloud service.
+- **fiftyone_pipeline_translation** - A flow element that translates values from a source element into another language using YAML translation files.
+- **fiftyone_pipeline_did** - A reader and cloud client for the 51Did (51Degrees Identifier) returned by the 51Degrees cloud service.
+
+The examples are described under Examples below. The `owid-python` folder is a git submodule holding the OWID library that `fiftyone_pipeline_did` carries.
 
 ## Dependencies
 
@@ -29,7 +34,7 @@ Generally, you will want to be installing one of the engines such as [device det
 
 `pip install fiftyone-pipeline-core`
 `pip install fiftyone-pipeline-engines`
-`pip install fiftyone-pipeline-cloundrequestengine`
+`pip install fiftyone-pipeline-cloudrequestengine`
 
 ### From GitHub
 
@@ -53,7 +58,7 @@ If you want examples that demonstrate how to use 51Degrees products such as devi
 
 | Example                                                                     | Description                                                                                          |
 |-----------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
-| fiftyone_pipeline_code/examples/client_side_evidence_custom_flow_element.py | Demonstrates how to create a custom flow element, which can then be included in a pipeline.          |
+| fiftyone_pipeline_core/examples/client_side_evidence_custom_flow_element.py | Demonstrates how to create a custom flow element, which can then be included in a pipeline.          |
 | fiftyone_pipeline_engines_fiftyone/examples/usagesharing                    | Shows how to share usage with 51Degrees. This helps us to keep our products up to date and accurate. |
 
 The [examples](examples/readme.md) folder holds examples that call the 51Degrees cloud service with a resource key or a licence key, and its readme says how to run them.
