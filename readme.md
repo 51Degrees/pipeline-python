@@ -38,18 +38,20 @@ Generally, you will want to be installing one of the engines such as [device det
 
 ### From GitHub
 
-* Clone repository
-* Install `pipenv` https://pypi.org/project/pipenv/
-* Run `pipenv install` in the root of the folder
-* Launch the environment shell by running `pipenv shell`
+* Clone the repository with its submodules, `git clone --recurse-submodules https://github.com/51Degrees/pipeline-python.git`
+* Create and activate a Python virtual environment
+* Run `pwsh ./setup.ps1` in the root of the folder, which installs the modules from the working copy, apart from `fiftyone_pipeline_did`, together with flask
 
 ## Tests
 
 If you've cloned the repository from GitHub, you can run the tests 
 and examples that are available. To run tests:
 
+* Install tox with `pip install tox`
 * Go to each directory (for example `fiftyone_pipeline_core`)
-* Run `python -m unittest discover -s tests -p test*.py`
+* Run `tox -e py`
+
+The tests that call the 51Degrees cloud service read a resource key from the `resource_key` environment variable. Without one, those tests fail in `fiftyone_pipeline_cloudrequestengine` and are skipped in `fiftyone_pipeline_did`.
 
 ## Examples
 
@@ -75,9 +77,9 @@ Install packages
 ```shell
 pwsh ./setup.ps1
 ```
-Set path to the script
+Set path to the script, from the root of the repository
 ```sh
-export FLASK_APP=client_side_evidence_custom_flow_element.py
+export FLASK_APP=fiftyone_pipeline_core/examples/client_side_evidence_custom_flow_element.py
 ```
 then start your application with
 ```sh
@@ -90,9 +92,9 @@ Install packages
 ```shell
 pwsh ./setup.ps1
 ```
-Set path to the script
+Set path to the script, from the root of the repository
 ```pwsh
-$env:FLASK_APP = "client_side_evidence_custom_flow_element.py"
+$env:FLASK_APP = "fiftyone_pipeline_core/examples/client_side_evidence_custom_flow_element.py"
 ```
 then start your application with 
 ```pwsh
