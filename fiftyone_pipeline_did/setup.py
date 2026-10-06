@@ -49,16 +49,15 @@ setuptools.setup(
     packages=["fiftyone_pipeline_did", "fiftyone_pipeline_did._owid"],
     package_dir={"": "src"},
     # The OWID source is carried inside this package as the private module
-    # fiftyone_pipeline_did._owid, copied out of the 51Degrees owid-python
-    # fork by ci/copy-owid-source.ps1 before the distribution is built. It
-    # cannot
-    # come from a package registry, because the 51Degrees fork is not
-    # published to PyPI and the name "owid" there belongs to an unrelated
-    # project, so a bare install_requires=["owid"] would install the wrong
-    # thing. The module is private (leading underscore) so that installing
-    # this package never claims the top level name "owid" on a consumer's
-    # machine. Its only third party requirement is cryptography, which is
-    # declared below and does come from PyPI.
+    # fiftyone_pipeline_did._owid, copied out of the owid-python submodule by
+    # ci/copy-owid-source.ps1 before the distribution is built. It cannot
+    # come from a package registry, because OWID is not published to PyPI
+    # and the name "owid" there belongs to an unrelated project, so a bare
+    # install_requires=["owid"] would install the wrong thing. The module is
+    # private (leading underscore) so that installing this package never
+    # claims the top level name "owid" on a consumer's machine. Its only third
+    # party requirement is cryptography, which is declared below and does
+    # come from PyPI.
     package_data={"fiftyone_pipeline_did._owid": ["LICENSE", "NOTICE"]},
     install_requires=["cryptography>=41"],
     license="EUPL-1.2",

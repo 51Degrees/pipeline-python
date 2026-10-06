@@ -11,12 +11,11 @@ $ErrorActionPreference = "Stop"
 # fiftyone_pipeline_did._owid, so that a published wheel can be imported
 # without the OWID library being installed separately.
 #
-# The dependency cannot come from a package registry. The 51Degrees fork of
-# OWID is not published to PyPI, and the name "owid" on PyPI belongs to an
-# unrelated project, so declaring install_requires=["owid"] would install the
-# wrong thing. The name here carries a leading underscore so that installing
-# the 51Did package never claims the top level name "owid" on a consumer's
-# machine.
+# The dependency cannot come from a package registry. OWID is not published
+# to PyPI, and the name "owid" on PyPI belongs to an unrelated project, so
+# declaring install_requires=["owid"] would install the wrong thing. The name
+# here carries a leading underscore so that installing the 51Did package never
+# claims the top level name "owid" on a consumer's machine.
 #
 # Nothing is fetched over the network, because owid-python is a submodule and
 # CI clones with --recurse-submodules. Nothing is written back to the
@@ -62,14 +61,13 @@ Apache License 2.0 in the LICENSE file beside this notice, and not the EUPL
 
 Copyright 2026 51 Degrees Mobile Experts Limited (51degrees.com)
 
-Taken from the 51Degrees fork of the OWID project,
-https://github.com/51Degrees/owid-python, at commit
+Taken from the OWID project, https://github.com/SWAN-community/owid-python,
+at commit
 $commit
-which follows https://github.com/SWAN-community/owid-python.
 
 The modules are placed under the private name _owid so that installing this
 package does not claim the top level name "owid", which on PyPI belongs to an
-unrelated project. Import OWID from the fork itself rather than from here.
+unrelated project. Import OWID from that project rather than from here.
 "@
 Set-Content -Path (Join-Path $target "NOTICE") -Value $notice -Encoding utf8
 

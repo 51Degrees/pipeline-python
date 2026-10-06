@@ -3,4 +3,4 @@
 	url = ../javascript-templates
 [submodule "owid-python"]
 	path = owid-python
-	url = ../owid-python.git
+	url = https://github.com/SWAN-community/owid-python.git
