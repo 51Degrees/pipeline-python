@@ -470,7 +470,7 @@ class CloudRequestEngine(Engine):
 
         not_covered = []
         for name in sorted(requested):
-            section, separator, property_name = name.partition(
+            section, _, property_name = name.partition(
                 Constants.EVIDENCE_SEPERATOR)
             section_values = answer.get(section)
             if (isinstance(section_values, dict) == False
