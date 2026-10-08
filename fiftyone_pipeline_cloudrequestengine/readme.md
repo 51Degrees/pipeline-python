@@ -66,6 +66,15 @@ performance reasons. This is the private hosting option of the cloud
 service, and both run the same service, so code written against one
 works unchanged against the other.
 
+## Examples
+
+The [examples](examples/readme.md) folder holds examples that use this
+engine to get device detection and IP intelligence results from one request
+to the 51Degrees cloud service, with a resource key or a licence key. Its
+readme says how to run them.
+
+## Engines that use it
+
 It is used by the cloud versions of the following 51Degrees engines:
 
 - [**fiftyone_devicedetection**](https://pypi.org/project/fiftyone-devicedetection/) - Get details about the devices accessing your web page

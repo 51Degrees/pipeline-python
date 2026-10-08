@@ -31,13 +31,13 @@
 # Each time the pipeline processes a request, one request to the cloud
 # service returns the results of every engine in it.
 #
-# This example is available in full on [GitHub](https://github.com/51Degrees/pipeline-python/blob/main/examples/src/fiftyone_pipeline_examples/cloud/mixed/gettingstarted_web/app.py).
+# This example is available in full on [GitHub](https://github.com/51Degrees/pipeline-python/blob/main/fiftyone_pipeline_cloudrequestengine/examples/src/fiftyone_pipeline_examples/cloud/mixed/gettingstarted_web/app.py).
 #
 # To run this example you need a resource key or a licence key.
 #
 # A resource key carries the list of properties it returns. Create one
 # carrying device detection and IP intelligence properties for free at
-# https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-app.py&utm_term=header
+# https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-app.py&utm_term=header
 # and set the _51DEGREES_RESOURCE_KEY environment variable to it, or pass it
 # as the first argument.
 #
@@ -254,7 +254,7 @@ def create_app(pipeline):
 
         # Some browsers only send User-Agent Client Hints that are asked for,
         # so set the Accept-CH header the results call for. More about this
-        # at https://51degrees.com/blog/user-agent-client-hints?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-app.py&utm_term=index
+        # at https://51degrees.com/blog/user-agent-client-hints?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-app.py&utm_term=index
         set_response_header(flowdata, response)
 
         response.set_data(render_template(
@@ -437,11 +437,11 @@ def main(argv):
             f"'{ExampleUtils.LICENSE_KEY_ENV_VAR}'. The 51Degrees cloud "
             "service is accessed using a resource key or a licence key. For "
             "more information see "
-            "https://51degrees.com/documentation/_services__cloud__resource_keys.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-app.py&utm_term=resource-key-required. "
+            "https://51degrees.com/documentation/_services__cloud__resource_keys.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-app.py&utm_term=resource-key-required. "
             "A resource key carrying the device detection and IP "
             "intelligence properties this example uses can be created for "
             "free at "
-            "https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-app.py&utm_term=resource-key-required. "
+            "https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_web-app.py&utm_term=resource-key-required. "
             "Once complete, set the first environment variable named at "
             "the start of this message to the key.")
         sys.exit(1)

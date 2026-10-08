@@ -33,13 +33,13 @@
 # 3. How to read device and IP intelligence results from one set of flow
 #    data
 #
-# This example is available in full on [GitHub](https://github.com/51Degrees/pipeline-python/blob/main/examples/src/fiftyone_pipeline_examples/cloud/mixed/gettingstarted_console.py).
+# This example is available in full on [GitHub](https://github.com/51Degrees/pipeline-python/blob/main/fiftyone_pipeline_cloudrequestengine/examples/src/fiftyone_pipeline_examples/cloud/mixed/gettingstarted_console.py).
 #
 # To run this example you need a resource key or a licence key.
 #
 # A resource key carries the list of properties it returns. Create one
 # carrying device detection and IP intelligence properties for free at
-# https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=header
+# https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=header
 # and set the _51DEGREES_RESOURCE_KEY environment variable to it, or pass it
 # as the first argument.
 #
@@ -126,7 +126,7 @@ class GettingStartedConsole():
 
     # The device detection properties to show, as label and property name.
     # See the property dictionary at
-    # https://51degrees.com/developers/property-dictionary?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=device-properties
+    # https://51degrees.com/developers/property-dictionary?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=device-properties
     # for every property available.
     DEVICE_PROPERTIES = [
         ("Mobile Device", "ismobile"),
@@ -162,13 +162,13 @@ class GettingStartedConsole():
     # Where to go next, printed after the results.
     FIND_OUT_MORE = [
         ("Device detection",
-         "https://51degrees.com/device-detection?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=find-out-more-device-detection"),
+         "https://51degrees.com/device-detection?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=find-out-more-device-detection"),
         ("IP intelligence",
-         "https://51degrees.com/ip-intelligence?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=find-out-more-ip-intelligence"),
+         "https://51degrees.com/ip-intelligence?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=find-out-more-ip-intelligence"),
         ("Resource keys",
-         "https://51degrees.com/documentation/_services__cloud__resource_keys.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=find-out-more-resource-keys"),
+         "https://51degrees.com/documentation/_services__cloud__resource_keys.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=find-out-more-resource-keys"),
         ("Pricing",
-         "https://51degrees.com/pricing?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=find-out-more-pricing"),
+         "https://51degrees.com/pricing?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=find-out-more-pricing"),
         ("Pipeline API for Python",
          "https://github.com/51Degrees/pipeline-python"),
         ("Device detection for Python",
@@ -253,7 +253,7 @@ def create_pipeline(logger, resource_key=None, license_key=None,
     """!
     The pipeline the example uses. For more information about building
     pipelines see the documentation at
-    https://51degrees.com/documentation/_pipeline_api__concepts__configuration__builders__index.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=create-pipeline
+    https://51degrees.com/documentation/_pipeline_api__concepts__configuration__builders__index.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=create-pipeline
     """
 
     return build_pipeline(
@@ -292,11 +292,11 @@ def main(argv):
             f"'{ExampleUtils.LICENSE_KEY_ENV_VAR}'. The 51Degrees cloud "
             "service is accessed using a resource key or a licence key. For "
             "more information see "
-            "https://51degrees.com/documentation/_services__cloud__resource_keys.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=resource-key-required. "
+            "https://51degrees.com/documentation/_services__cloud__resource_keys.html?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=resource-key-required. "
             "A resource key carrying the device detection and IP "
             "intelligence properties this example uses can be created for "
             "free at "
-            "https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=resource-key-required. "
+            "https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-gettingstarted_console.py&utm_term=resource-key-required. "
             "Once complete, set the first environment variable named at "
             "the start of this message to the key.")
         return

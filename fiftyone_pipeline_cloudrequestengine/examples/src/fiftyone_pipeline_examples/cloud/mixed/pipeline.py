@@ -114,7 +114,7 @@ def build_pipeline(logger, values, resource_key=None, license_key=None,
             "The key carries neither the device detection nor the IP "
             "intelligence properties this example shows. Create a resource "
             "key that carries them for free at "
-            "https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=examples-src-fiftyone_pipeline_examples-cloud-mixed-pipeline.py&utm_term=key-carries-nothing")
+            "https://configure.51degrees.com?utm_source=code&utm_medium=example&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-src-fiftyone_pipeline_examples-cloud-mixed-pipeline.py&utm_term=key-carries-nothing")
 
     builder = PipelineBuilder(pipeline_settings or {}).add(request_engine)
 
