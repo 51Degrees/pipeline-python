@@ -1130,7 +1130,7 @@ HTML_FILE_EXTENSION    = .html
 # of the possible markers and block names see the documentation.
 # This tag requires that the tag GENERATE_HTML is set to YES.
 
-HTML_HEADER            =
+HTML_HEADER            = ../../documentation/docs/header.html
 
 # The HTML_FOOTER tag can be used to specify a user-defined HTML footer for each
 # generated HTML page. If the tag is left blank doxygen will generate a standard
@@ -1179,7 +1179,10 @@ HTML_EXTRA_FILES       = ../../documentation/docs/images/icon-arrow-left-black.s
                          ../../documentation/docs/images/icon-arrow-right-black.svg \
                          ../../documentation/docs/images/icon-arrow-solid-right-mute.svg \
                          ../../documentation/docs/images/icon-arrow-solid-right-orange.svg \
-                         ../../documentation/docs/images/icon-search.svg
+                         ../../documentation/docs/images/icon-search.svg \
+                         ../../documentation/docs/testedversionsgrabber.js \
+                         ../../documentation/docs/examplegrabber.js \
+                         ../../documentation/docs/search51.js
 
 # The HTML_COLORSTYLE_HUE tag controls the color of the HTML output. Doxygen
 # will adjust the colors in the style sheet and background images according to
@@ -1595,7 +1598,7 @@ MATHJAX_CODEFILE       =
 # The default value is: YES.
 # This tag requires that the tag GENERATE_HTML is set to YES.
 
-SEARCHENGINE           = YES
+SEARCHENGINE           = NO
 
 # When the SERVER_BASED_SEARCH tag is enabled the search engine will be
 # implemented using a web server instead of a web client using Javascript. There
