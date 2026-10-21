@@ -78,7 +78,9 @@ jobs:
           foreach ($k in $keys) {
             Write-Host "::group::test_did_client_live with $($k.Name)"
             $env:_51DEGREES_RESOURCE_KEY = $k.Value
-            tox -- tests/test_did_client_live.py -v
+            # -rs prints why each skipped test skipped, which tells a run that
+            # lacked a key apart from one the service turned away.
+            tox -- tests/test_did_client_live.py -v -rs
             if ($LASTEXITCODE -ne 0) { $failed = $true }
             Write-Host '::endgroup::'
           }
