@@ -25,7 +25,8 @@
 The key is read from ``resource_key``, the variable the repository's other
 live tests and its CI use, or from ``_51DEGREES_RESOURCE_KEY`` as the
 example reads it. Without either the tests are skipped, not failed. An
-optional licence key is read from ``license_key`` or
+optional licence key is read from ``_51DEGREES_LICENSE_KEY_51DID``, the
+CI name for a key carrying the 51Did product, then ``license_key`` or
 ``_51DEGREES_LICENSE_KEY``, and the endpoint from ``FOD_CLOUD_API_URL`` as
 everywhere else. Every test here costs uses against the resource key.
 """
@@ -51,7 +52,8 @@ from fiftyone_pipeline_did.did_client import USER_AGENT
 
 RESOURCE_KEY = os.environ.get("resource_key") \
     or os.environ.get("_51DEGREES_RESOURCE_KEY")
-LICENCE_KEY = os.environ.get("license_key") \
+LICENCE_KEY = os.environ.get("_51DEGREES_LICENSE_KEY_51DID") \
+    or os.environ.get("license_key") \
     or os.environ.get("_51DEGREES_LICENSE_KEY")
 
 
