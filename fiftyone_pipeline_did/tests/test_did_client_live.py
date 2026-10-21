@@ -320,9 +320,15 @@ class BrowserCreatorContextLiveTests(unittest.TestCase):
         fodid = json.loads(body).get("fodid") or {}
         value = fodid.get("idproblic") or fodid.get("idprobglobal")
         if not value:
+            # The probabilistic reason in full, because it names every
+            # snippet result the service is still waiting for, and a cut
+            # dump of the whole member hides them behind the email ones.
+            reason = fodid.get("idprobglobalnullreason") \
+                or fodid.get("idproblicnullreason") \
+                or json.dumps(fodid)[:300]
             self.skipTest(
                 "this resource key returned no identifier for a browser "
-                "shaped request: " + json.dumps(fodid)[:300])
+                "shaped request: " + reason)
         return FodId.from_base64(value)
 
     def verify_context(self, fod_id, user_agent):
