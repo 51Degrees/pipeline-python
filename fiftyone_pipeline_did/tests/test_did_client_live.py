@@ -287,6 +287,12 @@ class BrowserCreatorContextLiveTests(unittest.TestCase):
             "eyJicmFuZHMiOlt7ImJyYW5kIjoiQ2hyb21pdW0iLCJ2ZXJzaW9uIjoiMTQwIn1d"
             "LCJwbGF0Zm9ybSI6IldpbmRvd3MiLCJwbGF0Zm9ybVZlcnNpb24iOiIxNS4wLjAifQ"),
         "51D_ThirdPartyCookiesEnabled": "true",
+        # The service creates no 51Did for a browser until these three
+        # snippets have reported too. No profile id is overridden, so the
+        # device stays the one the User-Agent gives.
+        "51D_ProfileIds": "0",
+        "51D_IsVisible": "true",
+        "51D_HasWebDriver": "false",
     }
 
     FACTORS = (
