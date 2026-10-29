@@ -108,4 +108,4 @@ which can also be run by hand with `python -m tox -e py` from here.
 - [Pricing](https://51degrees.com/pricing?utm_source=github&utm_medium=readme&utm_campaign=pipeline-python&utm_content=fiftyone_pipeline_cloudrequestengine-examples-readme.md&utm_term=find-out-more-pricing)
 - Pipeline API for Python: https://github.com/51Degrees/pipeline-python
 - Device detection for Python: https://github.com/51Degrees/device-detection-python
-- IP intelligence engine: https://github.com/51Degrees/ip-intelligence-cxx
+- IP intelligence engine: https://github.com/51Degrees/51degrees-cxx

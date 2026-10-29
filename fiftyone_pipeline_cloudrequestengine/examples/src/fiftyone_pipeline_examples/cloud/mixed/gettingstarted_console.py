@@ -174,7 +174,7 @@ class GettingStartedConsole():
         ("Device detection for Python",
          "https://github.com/51Degrees/device-detection-python"),
         ("IP intelligence engine",
-         "https://github.com/51Degrees/ip-intelligence-cxx"),
+         "https://github.com/51Degrees/51degrees-cxx"),
     ]
 
     @classmethod
