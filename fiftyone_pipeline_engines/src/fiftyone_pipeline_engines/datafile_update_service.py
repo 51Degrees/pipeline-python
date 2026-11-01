@@ -63,6 +63,8 @@ class DataFileUpdateService():
     the download of datafiles used by engines
     """
 
+    # Time between the file system watcher's checks of a data file.
+    FILE_SYSTEM_WATCHER_INTERVAL_SECONDS = 10
 
     def __init__(self, pipeline = None):
      
@@ -267,19 +269,40 @@ class DataFileUpdateService():
     def track_local_data_file_changes(self, data_file):
         """!
         Check for local changes to a datafile. Used by
-        the file system watcher
+        the file system watcher. A refresh that fails is logged, and
+        reported with AUTO_UPDATE_REFRESH_FAILED as on the update route.
+        The next check is scheduled whatever happens, so that a later file
+        is still picked up.
         @type data_file: DataFile
         @param data_file: Datafile to check updates for
         """
-        if os.stat(data_file.path).st_mtime > data_file.last_changed_time:
+        try:
+            changed_time = os.stat(data_file.path).st_mtime
+        except OSError:
+            # A file that is missing, for example part way through being
+            # replaced, is looked for again at the next check.
+            changed_time = None
+        try:
             # Don't change if data_file is updating
-            if not data_file.updating:
-                data_file.last_changed_time = os.stat(data_file.path).st_mtime
+            if (changed_time is not None and
+                    changed_time > data_file.last_changed_time and
+                    not data_file.updating):
+                data_file.last_changed_time = changed_time
                 data_file.refresh()
-        t = threading.Timer(10, self.track_local_data_file_changes, args=[data_file])
-        t.daemon = True
-        t.name = "AutoUpdate - FileWatcher"
-        t.start()
+        except Exception as e:
+            self.pipeline.log(
+                "error",
+                "Refreshing from the changed data file '" + data_file.path +
+                "' failed. " + str(e))
+            self.__emit(UpdateStatus.AUTO_UPDATE_REFRESH_FAILED, data_file)
+        finally:
+            t = threading.Timer(
+                self.FILE_SYSTEM_WATCHER_INTERVAL_SECONDS,
+                self.track_local_data_file_changes,
+                args=[data_file])
+            t.daemon = True
+            t.name = "AutoUpdate - FileWatcher"
+            t.start()
 
     def on_complete(self, on_complete_method):
         self.on_complete_methods.append(on_complete_method)
