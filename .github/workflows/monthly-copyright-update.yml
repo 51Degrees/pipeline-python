@@ -8,7 +8,8 @@ on:
         type: boolean
         description: Dry Run
   schedule:
-    - cron: '0 0 1 * *'
+    # The copyright year only changes once a year, so this runs on 1 January.
+    - cron: '0 0 1 1 *'
 
 jobs:
   Monthly_Copyright_Update:
